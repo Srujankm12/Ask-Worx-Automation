@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { getContacts } from '../api';
 import { format } from 'date-fns';
 import { formatSlug } from '../utils';
-import { UserPlus, Send, Search, X, MessageSquare, Trash2 } from 'lucide-react';
-import { saveContact, sendMessage, deleteContact } from '../api';
+import { UserPlus, Send, Search, X, MessageSquare, Trash2, Bell, BellOff } from 'lucide-react';
+import { saveContact, sendMessage, deleteContact, toggleOptOut } from '../api';
 
 const Contacts = () => {
   const [contacts, setContacts] = useState([]);
@@ -70,6 +70,15 @@ const Contacts = () => {
     }
   };
 
+  const handleToggleOptOut = async (id, currentStatus) => {
+    try {
+      await toggleOptOut(id, !currentStatus);
+      fetchContacts();
+    } catch (err) {
+      alert('Failed to update subscription status');
+    }
+  };
+
   const filteredContacts = contacts.filter(c => 
     (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     c.phone.includes(searchTerm)
@@ -121,7 +130,7 @@ const Contacts = () => {
             <thead className="sticky top-0 z-10">
               <tr className="text-slate-500 text-[9px] font-black uppercase tracking-[0.2em] bg-slate-50/80 backdrop-blur-md">
                 <th className="px-10 py-6">User Identity</th>
-                <th className="px-10 py-6">Session ID</th>
+                <th className="px-10 py-6">Status</th>
                 <th className="px-10 py-6">Engagement</th>
                 <th className="px-10 py-6 text-right">Actions</th>
               </tr>
@@ -141,7 +150,11 @@ const Contacts = () => {
                     </div>
                   </td>
                   <td className="px-10 py-8">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">ID: {contact.id}</span>
+                    {contact.opt_out ? (
+                      <span className="text-[9px] font-black text-red-400 uppercase tracking-widest bg-red-50 px-2 py-1 rounded-md">Opted Out</span>
+                    ) : (
+                      <span className="text-[9px] font-black text-green-400 uppercase tracking-widest bg-green-50 px-2 py-1 rounded-md">Subscribed</span>
+                    )}
                   </td>
                   <td className="px-10 py-8">
                     <div className="flex gap-1.5">
@@ -151,6 +164,13 @@ const Contacts = () => {
                     </div>
                   </td>
                   <td className="px-10 py-8 text-right flex justify-end gap-2">
+                    <button 
+                      onClick={() => handleToggleOptOut(contact.id, contact.opt_out)}
+                      className={`p-3 rounded-xl transition-all active:scale-95 group/btn ${contact.opt_out ? 'bg-green-50 text-green-600 hover:bg-green-600 hover:text-white' : 'bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white'}`}
+                      title={contact.opt_out ? "Re-subscribe" : "Disable Automated Messages"}
+                    >
+                      {contact.opt_out ? <Bell className="w-4 h-4 group-hover/btn:scale-110 transition-transform" /> : <BellOff className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />}
+                    </button>
                     <button 
                       onClick={() => handleDeleteContact(contact.id)}
                       className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all active:scale-95 group/btn"

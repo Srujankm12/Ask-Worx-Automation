@@ -88,6 +88,18 @@ func handleMessage(phone, input string, lat, lng float64) {
 	text := strings.ToLower(strings.TrimSpace(input))
 	db.SaveContact(phone, "")
 
+	if text == "stop" || input == "opt_out" {
+		db.UpdateContactOptOutByPhone(phone, true)
+		sendTextMessage(phone, "✅ You have successfully opted out of our automated broadcasts and daily messages. If you ever need assistance, you can always type 'hi' or 'menu'.")
+		return
+	}
+
+	if text == "subscribe" || input == "opt_in" {
+		db.UpdateContactOptOutByPhone(phone, false)
+		sendTextMessage(phone, "✅ You have been successfully re-subscribed to our automated updates.")
+		return
+	}
+
 	// --- Module 4: Internal Team System (Priority 0) ---
 	if tryInternalSystem(phone, input, string(sessions[phone]), lat, lng) {
 		return
@@ -115,6 +127,7 @@ func handleMessage(phone, input string, lat, lng float64) {
 	if text == "hi" || text == "hello" || text == "hey" || text == "start" || text == "menu" || 
 		strings.Contains(text, "main menu") || input == "main_menu" || 
 		strings.Contains(text, "need assistance with your industrial platform") {
+		db.UpdateContactOptOutByPhone(phone, false) // Auto-subscribe on interaction
 		sendOpeningMessage(phone)
 		return
 	}

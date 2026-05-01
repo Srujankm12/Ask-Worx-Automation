@@ -26,6 +26,20 @@ func UpdateContactName(phone, name string) error {
 	return err
 }
 
+func UpdateContactOptOut(id int, optOut bool) error {
+	_, err := Pool.Exec(context.Background(), 
+		"UPDATE contacts SET opt_out = $1 WHERE id = $2", 
+		optOut, id)
+	return err
+}
+
+func UpdateContactOptOutByPhone(phone string, optOut bool) error {
+	_, err := Pool.Exec(context.Background(), 
+		"UPDATE contacts SET opt_out = $1 WHERE phone = $2", 
+		optOut, phone)
+	return err
+}
+
 func DeleteContact(id int) error {
 	_, err := Pool.Exec(context.Background(), 
 		"DELETE FROM contacts WHERE id = $1", 
@@ -45,6 +59,7 @@ type Contact struct {
 	Phone     string    `json:"phone"`
 	Name      *string   `json:"name"`
 	Company   *string   `json:"company"`
+	OptOut    bool      `json:"opt_out"`
 	JoinedAt  time.Time `json:"joined_at"`
 }
 
@@ -64,7 +79,7 @@ func GetAllContacts() ([]Contact, error) {
 	SyncNamesFromLeads()
 	
 	query := `
-		SELECT c.id, c.phone, c.name, c.company, c.joined_at
+		SELECT c.id, c.phone, c.name, c.company, c.opt_out, c.joined_at
 		FROM contacts c
 		LEFT JOIN (
 			SELECT phone, MAX(sent_at) as last_msg
@@ -82,7 +97,7 @@ func GetAllContacts() ([]Contact, error) {
 	contacts := []Contact{}
 	for rows.Next() {
 		var c Contact
-		err := rows.Scan(&c.ID, &c.Phone, &c.Name, &c.Company, &c.JoinedAt)
+		err := rows.Scan(&c.ID, &c.Phone, &c.Name, &c.Company, &c.OptOut, &c.JoinedAt)
 		if err != nil {
 			continue
 		}

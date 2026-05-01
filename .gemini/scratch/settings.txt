@@ -1,0 +1,79 @@
+--- All Settings ---
+greeting_customer: 🌅 *Good Morning from ASKworX Smart Automation LLP!* 🏭
+
+We hope you have a productive day ahead. If you need any assistance with Industrial Automation, IIoT, or Software solutions, we are just a message away. 🚀
+btn_start_day: 🏢 START DAY
+btn_end_day: 🏢 END DAY
+content_industrial_body: ⚙️ Industrial Automation
+The Foundation: Total Control at Machine Level
+
+We design, build, and commission high-reliability automation systems engineered for continuous 24/7 industrial operations. Our experts specialize in creating seamless machine-level interfaces that maximize uptime.
+
+🔹 End-to-End System Design
+🔹 Retrofitting & Upgrades
+🔹 Machine Monitoring
+🔹 High-Performance Algorithms
+🔹 Safety-First Engineering
+
+Select a service to learn more:
+content_industrial_image: https://images.unsplash.com/photo-1537462715879-360eeb61a0ad?w=800
+content_software_image: https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=800
+content_iiot_body: 📊 IIoT & Analytics Solutions
+Connecting your plant to the cloud.
+
+Select a service:
+support_center: 📞 ASKworX Smart Automation LLP Support Center
+How can we help you today?
+
+Select a category below to connect with the right expert.
+content_welcome_body: 🏭 Welcome to {{company}}!
+Ground to Cloud — Engineering Smart Automation
+
+We help manufacturers move from shop-floor control to cloud-connected intelligence.
+
+🎯 Trusted by industries across India
+⚡ 24/7 Automation Support
+🌐 www.askworx.in
+
+How can we assist you today?
+content_iiot_image: https://images.unsplash.com/photo-1518770660439-4636190af475?w=800
+greeting_employee: 🌅 *Good Morning, {{name}}!* 🏆
+
+Another day to pioneer industrial excellence. Don't forget to **Start Your Day** in the Internal Hub to log your focus objectives.
+
+Let's make an impact! 🚀
+about_company: 🏭 About ASKworX Smart Automation LLP
+Ground to Cloud — Engineering Smart Automation
+
+At ASKworX Smart Automation LLP, we bridge the gap between shop-floor machinery and cloud-connected intelligence. We provide high-reliability solutions for modern manufacturing.
+
+🛠 Our Solutions:
+✅ PLC & SCADA Engineering
+✅ Control Panel Design
+✅ Industrial Networking
+✅ Robotics & Motion Control
+✅ IIoT & Cloud Integration
+✅ Data Visualization
+
+⚲ Office Address:
+1381, 6th Main Road, 1st Phase, BEML Layout, 5th Stage, RR Nagar, Bangalore, Karnataka - 560098.
+
+📞 Contact Detail:
+☎︎ +919030108949
+📧 contact@askworx.in
+🌐 www.askworx.in
+hub_welcome: *ASKworX Smart Automation LLP INTERNAL HUB*
+
+Welcome back, *Champion*! 🏆
+
+At ASKworX Smart Automation LLP, we aren't just building automation; we are *pioneering the future* of industrial intelligence. 🏭✨
+
+Your expertise today moves the needle for industries worldwide. From Ground to Cloud, let's deliver excellence and show why ASKworX Smart Automation LLP is the leader in Smart Automation. 🚀
+
+Ready to make an impact? Select an action below: 👇
+btn_apply_leave: 🏝️ APPLY LEAVE
+content_welcome_image: https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800
+content_software_body: 💻 Digital & Software Solutions
+Bridging traditional automation with modern digital thinking to scale your business.
+
+From automated customer engagement to full-scale enterprise software, we engineer tools that drive growth.

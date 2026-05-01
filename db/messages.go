@@ -76,7 +76,7 @@ func GetMessagesByPhone(phone string) ([]MessageLog, error) {
 }
 
 func GetAllPhoneNumbers() ([]string, error) {
-	rows, err := Pool.Query(context.Background(), "SELECT DISTINCT phone FROM contacts")
+	rows, err := Pool.Query(context.Background(), "SELECT DISTINCT phone FROM contacts WHERE opt_out = FALSE")
 	if err != nil {
 		return nil, err
 	}

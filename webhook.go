@@ -45,6 +45,15 @@ type WebhookRequest struct {
 						Filename string `json:"filename"`
 					} `json:"document,omitempty"`
 				} `json:"messages"`
+				Statuses []struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+					Errors []struct {
+						Code    int    `json:"code"`
+						Title   string `json:"title"`
+						Message string `json:"message"`
+					} `json:"errors,omitempty"`
+				} `json:"statuses,omitempty"`
 			} `json:"value"`
 		} `json:"changes"`
 	} `json:"entry"`
@@ -113,6 +122,19 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 						log.Printf("[Webhook] Incoming from %s: %s", phone, text)
 						db.LogMessage(phone, "incoming", text, msg.ID)
 						go handleMessage(phone, text, lat, lng)
+					}
+				}
+				
+				// 3. Process delivery statuses
+				for _, status := range change.Value.Statuses {
+					if status.Status == "failed" && len(status.Errors) > 0 {
+						errStr := ""
+						for _, e := range status.Errors {
+							errStr += e.Message + " "
+						}
+						log.Printf("⚠️ [Webhook] Message Delivery FAILED (ID: %s) - Reason: %s", status.ID, errStr)
+					} else {
+						// log.Printf("[Webhook] Message %s status: %s", status.ID, status.Status)
 					}
 				}
 			}

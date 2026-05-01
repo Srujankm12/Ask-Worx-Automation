@@ -156,6 +156,26 @@ func AdminRoutes() chi.Router {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	r.Post("/contacts/{id}/opt-out", func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		var id int
+		fmt.Sscanf(idStr, "%d", &id)
+		
+		var body struct {
+			OptOut bool `json:"opt_out"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := db.UpdateContactOptOut(id, body.OptOut); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	r.Get("/messages", func(w http.ResponseWriter, r *http.Request) {
 		messages, _ := db.GetAllMessages()
 		json.NewEncoder(w).Encode(messages)

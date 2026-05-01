@@ -61,6 +61,7 @@ func InitScheduler() {
 
 			buttons := []Button{
 				{ID: "main_menu", Title: "🏠 Explore Menu"},
+				{ID: "opt_out", Title: "🛑 Stop Messages"},
 			}
 			sendInteractiveButtons(p, msg, buttons)
 		}

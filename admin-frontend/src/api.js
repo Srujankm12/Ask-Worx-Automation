@@ -35,6 +35,7 @@ export const markCallbackDone = (id) => api.post('/callbacks/mark-done', { id })
 export const getContacts = () => api.get('/contacts');
 export const saveContact = (data) => api.post('/contacts', data);
 export const deleteContact = (id) => api.delete(`/contacts/${id}`);
+export const toggleOptOut = (id, optOut) => api.post(`/contacts/${id}/opt-out`, { opt_out: optOut });
 export const getMessages = (params) => api.get('/messages', { params });
 export const getChatHistory = (phone) => api.get(`/messages/${phone}`);
 export const sendMessage = (phone, message) => api.post('/send-message', { phone, message });
