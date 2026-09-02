@@ -2,12 +2,13 @@ package db
 
 import (
 	"context"
+	"log"
 	"time"
 )
 
 func CreateCallback(phone, name, preferredTime string) error {
-	_, err := Pool.Exec(context.Background(), 
-		"INSERT INTO callbacks (phone, name, preferred_time) VALUES ($1, $2, $3)", 
+	_, err := Pool.Exec(context.Background(),
+		"INSERT INTO callbacks (phone, name, preferred_time) VALUES ($1, $2, $3)",
 		phone, name, preferredTime)
 	return err
 }
@@ -33,6 +34,7 @@ func GetAllCallbacks() ([]Callback, error) {
 		var c Callback
 		err := rows.Scan(&c.ID, &c.Phone, &c.Name, &c.PreferredTime, &c.Status, &c.CreatedAt)
 		if err != nil {
+			log.Printf("[db] %s: skipping unreadable row: %v", "db/callbacks.go", err)
 			continue
 		}
 		callbacks = append(callbacks, c)

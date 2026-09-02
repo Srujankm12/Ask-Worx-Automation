@@ -124,7 +124,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 						go handleMessage(phone, text, lat, lng)
 					}
 				}
-				
+
 				// 3. Process delivery statuses
 				for _, status := range change.Value.Statuses {
 					if status.Status == "failed" && len(status.Errors) > 0 {

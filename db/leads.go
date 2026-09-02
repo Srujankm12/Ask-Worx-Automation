@@ -3,12 +3,13 @@ package db
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 )
 
 func CreateLead(phone, name, company, requirement, contactPhone string) error {
-	_, err := Pool.Exec(context.Background(), 
-		"INSERT INTO leads (phone, name, company, requirement, contact_phone) VALUES ($1, $2, $3, $4, $5)", 
+	_, err := Pool.Exec(context.Background(),
+		"INSERT INTO leads (phone, name, company, requirement, contact_phone) VALUES ($1, $2, $3, $4, $5)",
 		phone, name, company, requirement, contactPhone)
 	if err != nil {
 		fmt.Printf("ERROR creating lead: %v\n", err)
@@ -82,6 +83,7 @@ func GetLeadsPaginated(limit, offset int, start, end string) ([]Lead, error) {
 		var l Lead
 		err := rows.Scan(&l.ID, &l.Phone, &l.Name, &l.Company, &l.Requirement, &l.ContactPhone, &l.Status, &l.CreatedAt)
 		if err != nil {
+			log.Printf("[db] %s: skipping unreadable row: %v", "db/leads.go", err)
 			continue
 		}
 		leads = append(leads, l)

@@ -44,7 +44,7 @@ func sendButtons(phone, text string, btns []map[string]string) {
 }
 
 const (
-	MODE_TEST        = "TEST"
+	MODE_TEST = "TEST"
 )
 
 // Main dispatcher for Internal System
@@ -68,13 +68,13 @@ func tryInternalSystem(phone, input, state string, lat, lng float64) bool {
 	if input == "LOCATION_DATA" {
 		if state == "expect_location_checkin" {
 			db.MarkCheckIn(phone, lat, lng)
-			sendTextMessage(phone, "📍 *Location Captured & Verified!*\n\nYour site attendance has been recorded successfully. 🚀\n\n*What is your primary focus for today?*\n(Please list your main tasks below)")
+			sendTextMessage(phone, db.SettingOr("emp_checkin_done", "📍 *Location received.*\n\nYour attendance is recorded.\n\n*What are you working on today?*\nList your main tasks below."))
 			updateSession(phone, "submit_workplan")
 			return true
 		}
 		if state == "expect_location_checkout" {
 			db.MarkCheckOut(phone, lat, lng)
-			sendTextMessage(phone, "📍 *Location Captured & Departure Verified!*\n\nGreat job today! 🎉\n\n*Please submit your EOD Accomplishments below:*")
+			sendTextMessage(phone, db.SettingOr("emp_checkout_done", "📍 *Location received.*\n\nYour departure is recorded.\n\n*What did you complete today?*\nSend your end-of-day report below."))
 			updateSession(phone, "submit_eod")
 			return true
 		}
@@ -99,11 +99,9 @@ func tryInternalSystem(phone, input, state string, lat, lng float64) bool {
 }
 
 func sendEmployeeDashboard(phone string) {
-	msg := fmt.Sprintf("*%s INTERNAL HUB*\n\n" +
-			"Welcome back, *Champion*! 🏆\n\n" +
-			"At %s, we aren't just building automation; we are *pioneering the future* of industrial intelligence. 🏭✨\n\n" +
-			"Your expertise today moves the needle for industries worldwide. From Ground to Cloud, let's deliver excellence and show why %s is the leader in Smart Automation. 🚀\n\n" +
-			"Ready to make an impact? Select an action below: 👇", os.Getenv("COMPANY_NAME"), os.Getenv("COMPANY_NAME"), os.Getenv("COMPANY_NAME"))
+	msg := renderTemplate(db.SettingOr("hub_welcome",
+		"*{{company}} INTERNAL HUB*\n\nWelcome back, {{name}}.\n\nChoose an action below."),
+		db.GetEmployeeName(phone))
 
 	btnStart := db.GetSetting("btn_start_day")
 	if btnStart == "" {
@@ -140,29 +138,29 @@ func handleInternalMenu(phone, input string) bool {
 	case isCheckIn:
 		alreadyChecked, _ := db.HasCheckedInToday(phone)
 		if alreadyChecked {
-			sendTextMessage(phone, "👋 *Champion, you've already checked in for today!* 🏆\n\nYou're already on the clock and moving the needle. Keep up the great work! 🚀")
+			sendTextMessage(phone, db.SettingOr("emp_checkin_already", "You have already checked in today."))
 			return true
 		}
-		sendTextMessage(phone, "🏢 *VERIFICATION REQUIRED* 🏢\n\nTo ensure precision in our operations, please share your **Live Location** 📍 via WhatsApp to record your arrival at the project site.")
+		sendTextMessage(phone, db.SettingOr("emp_checkin_prompt", "*Share your location to check in.*\n\nUse the attachment button in WhatsApp and send your current location."))
 		updateSession(phone, "expect_location_checkin")
 		return true
 
 	case isCheckOut:
 		alreadyOut, _ := db.HasCheckedOutToday(phone)
 		if alreadyOut {
-			sendTextMessage(phone, "🌙 *Champion, you've already wrapped up your day!* ✨\n\nYour EOD reports are filed and missions accomplished. Time to recharge! See you at the top tomorrow. 🚀")
+			sendTextMessage(phone, db.SettingOr("emp_checkout_already", "You have already checked out today. Your report is filed."))
 			return true
 		}
-		sendTextMessage(phone, "🏢 *VERIFICATION REQUIRED* 🏢\n\nPlease share your **Live Location** 📍 to record your departure coordinates and verify your mission wrap-up.")
+		sendTextMessage(phone, db.SettingOr("emp_checkout_prompt", "*Share your location to check out.*\n\nUse the attachment button in WhatsApp and send your current location."))
 		updateSession(phone, "expect_location_checkout")
 		return true
 
 	case isLeave:
-		msg := "🏝️ *LEAVE REQUEST INITIATED*\n\nPlease select the type of leave you require:"
+		msg := db.SettingOr("emp_leave_type_prompt", "*Leave request*\n\nWhich type of leave do you need?")
 		buttons := []map[string]string{
-			{"id": "leave_casual", "title": "🛋️ CASUAL"},
-			{"id": "leave_sick", "title": "🤒 SICK LEAVE"},
-			{"id": "leave_emergency", "title": "🚨 EMERGENCY"},
+			{"id": "leave_casual", "title": db.ButtonLabel("leave_casual", "🛋️ CASUAL")},
+			{"id": "leave_sick", "title": db.ButtonLabel("leave_sick", "🤒 SICK LEAVE")},
+			{"id": "leave_emergency", "title": db.ButtonLabel("leave_emergency", "🚨 EMERGENCY")},
 		}
 		sendButtons(phone, msg, buttons)
 		updateSession(phone, "leave_request_type")
@@ -181,14 +179,14 @@ func handleLeaveRequest(phone, input string) bool {
 			session["leave_type"] = input
 			session["state"] = "leave_request_date"
 			saveSession(phone, session)
-			sendTextMessage(phone, "📅 *What is the date for this leave?*\n(e.g., 20th Oct)")
+			sendTextMessage(phone, db.SettingOr("emp_leave_date_prompt", "*Which date is the leave for?*\nFor example: 20 Oct"))
 			return true
 		}
 	case "leave_request_date":
 		session["leave_date"] = input
 		session["state"] = "leave_request_reason"
 		saveSession(phone, session)
-		sendTextMessage(phone, "📝 *Please provide a brief reason:*")
+		sendTextMessage(phone, db.SettingOr("emp_leave_reason_prompt", "*What is the reason?*\nA short line is enough."))
 		return true
 	case "leave_request_reason":
 		lType := fmt.Sprintf("%v", session["leave_type"])
@@ -196,7 +194,7 @@ func handleLeaveRequest(phone, input string) bool {
 
 		db.SubmitLeave(phone, lType, lDate, input)
 
-		msg := "🚀 *REQUEST SUBMITTED*\n───────────────────\n\nYour leave request has been sent to management for approval. You will receive a notification once verified.\n\n*Rest up & Recharge!* ⚡"
+		msg := db.SettingOr("emp_leave_submitted", "*Leave request sent.*\n\nIt is with your manager now. You will get a message here once it is decided.")
 		sendFAQAnswer(phone, msg)
 		clearSession(phone)
 		return true
@@ -207,7 +205,7 @@ func handleLeaveRequest(phone, input string) bool {
 
 func handleWorkPlanSubmission(phone, input string) bool {
 	db.UpdateWorkPlan(phone, input)
-	msg := "🏆 *PLAN ARCHIVED*\n\nYour objectives are locked in. Now, let's make it happen!\n\n_Have a productive day, Champion!_ 🔥"
+	msg := db.SettingOr("emp_workplan_saved", "*Day plan saved.* Have a good day.")
 	sendFAQAnswer(phone, msg)
 	clearSession(phone)
 	return true
@@ -215,10 +213,31 @@ func handleWorkPlanSubmission(phone, input string) bool {
 
 func handleEODSubmission(phone, input string) bool {
 	db.UpdateEODReport(phone, input)
-	msg := "✨ *WRAP UP COMPLETE*\n\nExcellent work today! Your EOD report has been filed.\n\n_Enjoy your evening, you've earned it!_ 🌙"
+	msg := db.SettingOr("emp_eod_saved", "*End-of-day report filed.* Thank you — see you tomorrow.")
 	sendFAQAnswer(phone, msg)
 	clearSession(phone)
 	return true
 }
 
 // Legacy flows removed.
+
+// renderTemplate fills the placeholders a configurable message may contain.
+//
+// These are the only three, and they are documented in the admin panel beside
+// every field that accepts them. An unknown placeholder is left as written
+// rather than blanked, so a typo is visible in the sent message instead of
+// silently deleting half a sentence.
+//
+// {{name}} falls back to a neutral form when the recipient is not a known
+// employee, so a template never greets somebody as an empty string.
+func renderTemplate(text, name string) string {
+	if strings.TrimSpace(name) == "" {
+		name = "there"
+	}
+	r := strings.NewReplacer(
+		"{{company}}", os.Getenv("COMPANY_NAME"),
+		"{{name}}", name,
+		"{{phone}}", os.Getenv("ADMIN_PHONE"),
+	)
+	return r.Replace(text)
+}

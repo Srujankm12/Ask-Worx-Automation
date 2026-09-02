@@ -21,7 +21,6 @@ func AdminRoutes() chi.Router {
 
 	r.Use(AuthMiddleware)
 
-
 	// ── STATIC FILE SERVING FOR UPLOADS ──────────────────────────────────────
 	uploadDir := "./uploads"
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
@@ -128,7 +127,7 @@ func AdminRoutes() chi.Router {
 		contacts, _ := db.GetAllContacts()
 		json.NewEncoder(w).Encode(contacts)
 	})
-	
+
 	r.Post("/contacts", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Phone string `json:"phone"`
@@ -160,7 +159,7 @@ func AdminRoutes() chi.Router {
 		idStr := chi.URLParam(r, "id")
 		var id int
 		fmt.Sscanf(idStr, "%d", &id)
-		
+
 		var body struct {
 			OptOut bool `json:"opt_out"`
 		}
@@ -351,7 +350,13 @@ func AdminRoutes() chi.Router {
 		}
 
 		// Notify employee via WhatsApp
-		msg := fmt.Sprintf("📢 *Leave Request Update*\n\nYour leave request has been *%s* by the management.", body.Status)
+		// {{status}} is specific to this template. The employee is told the
+		// outcome in a word, not left to infer it from a tone.
+		msg := strings.ReplaceAll(
+			renderTemplate(db.SettingOr("emp_leave_decision",
+				"*Leave request {{status}}*\n\nYour leave request has been {{status}}.\n\n— {{company}}"),
+				db.GetEmployeeName(phone)),
+			"{{status}}", body.Status)
 		sendFAQAnswer(phone, msg) // Use the one with Main Menu button
 
 		w.WriteHeader(http.StatusOK)
@@ -416,11 +421,13 @@ func AdminRoutes() chi.Router {
 		}
 
 		go func() {
-			fullMsg := "📢 *O F F I C I A L   B R O A D C A S T* 📢\n\n" +
-				"Team " + os.Getenv("COMPANY_NAME") + ",\n\n" +
-				"*" + body.Message + "*\n\n" +
-				"United by innovation, driven by excellence. Let's keep pioneering the future of industry, one milestone at a time. 🌍✨\n\n" +
-				"Regards,\n*" + os.Getenv("COMPANY_NAME") + " Team*"
+			// The panel supplies {{message}}; this template is everything
+			// wrapped around it. Previously the wrapper was fixed, so an
+			// administrator wrote the middle of a message they could not see.
+			fullMsg := strings.ReplaceAll(
+				renderTemplate(db.SettingOr("emp_announcement",
+					"*Announcement*\n\n{{message}}\n\n— {{company}}"), ""),
+				"{{message}}", body.Message)
 			for _, p := range targets {
 				sendFAQAnswer(p, fullMsg)
 				time.Sleep(500 * time.Millisecond) // Rate limit
@@ -522,9 +529,9 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		// Skip auth for login and public uploads
 		// Note: chi might have different paths depending on where it's mounted
 		path := r.URL.Path
-		if path == "/api/login" || path == "/login" || 
-		   strings.HasPrefix(path, "/uploads") || 
-		   strings.HasPrefix(path, "/api/uploads") {
+		if path == "/api/login" || path == "/login" ||
+			strings.HasPrefix(path, "/uploads") ||
+			strings.HasPrefix(path, "/api/uploads") {
 			next.ServeHTTP(w, r)
 			return
 		}

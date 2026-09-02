@@ -52,7 +52,7 @@ func sendInteractiveButtons(to, bodyText string, buttons []Button) {
 		if len([]rune(title)) > 20 {
 			title = string([]rune(title)[:17]) + "..."
 		}
-		
+
 		waButtons = append(waButtons, map[string]interface{}{
 			"type": "reply",
 			"reply": map[string]string{

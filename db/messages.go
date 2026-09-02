@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"log"
 	"time"
 )
 
@@ -49,6 +50,7 @@ func GetAllMessages() ([]MessageLog, error) {
 		var l MessageLog
 		err := rows.Scan(&l.ID, &l.Phone, &l.Direction, &l.Message, &l.SentAt)
 		if err != nil {
+			log.Printf("[db] %s: skipping unreadable row: %v", "db/messages.go", err)
 			continue
 		}
 		logs = append(logs, l)
@@ -68,6 +70,7 @@ func GetMessagesByPhone(phone string) ([]MessageLog, error) {
 		var l MessageLog
 		err := rows.Scan(&l.ID, &l.Phone, &l.Direction, &l.Message, &l.SentAt)
 		if err != nil {
+			log.Printf("[db] %s: skipping unreadable row: %v", "db/messages.go", err)
 			continue
 		}
 		logs = append(logs, l)
@@ -87,6 +90,7 @@ func GetAllPhoneNumbers() ([]string, error) {
 		var p string
 		err := rows.Scan(&p)
 		if err != nil {
+			log.Printf("[db] %s: skipping unreadable row: %v", "db/messages.go", err)
 			continue
 		}
 		phones = append(phones, p)

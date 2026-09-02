@@ -4,8 +4,16 @@ CREATE TABLE IF NOT EXISTS contacts (
     phone VARCHAR UNIQUE, 
     name VARCHAR, 
     company VARCHAR, 
+    opt_out BOOLEAN NOT NULL DEFAULT FALSE,
     joined_at TIMESTAMP DEFAULT NOW()
 );
+
+-- contacts.opt_out is read by GetAllContacts and GetBroadcastRecipients and
+-- written by the opt-out toggle, but no migration ever created it — so
+-- GET /api/contacts failed on every call and returned an empty list with a
+-- 200, and broadcasts selected nobody. Added here for new databases; the
+-- ALTER covers databases created before this line existed.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS opt_out BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS leads (
     id SERIAL PRIMARY KEY, 
@@ -97,3 +105,31 @@ CREATE TABLE IF NOT EXISTS faqs (
     answer TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Timestamps carry a time zone.
+--
+-- Every timestamp column was `timestamp without time zone` and was written
+-- with now(), which returns the SERVER's local time. pgx then scanned those
+-- naive values as UTC and Go marshalled them with a trailing "Z", so the API
+-- claimed a local time was a UTC one. On a machine running Asia/Kolkata every
+-- timestamp in the product arrived 5h30m in the future — recent leads read
+-- "in about 1 hour", and any report bucketed by day was wrong near midnight.
+--
+-- The USING clause reads each stored value as local time, which is what it
+-- always was. On a server already running UTC this is a no-op, so the same
+-- migration is correct for both this machine and the deployment.
+-- ─────────────────────────────────────────────────────────────────────────
+ALTER TABLE attendance       ALTER COLUMN check_in      TYPE TIMESTAMPTZ USING check_in      AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE attendance       ALTER COLUMN check_out     TYPE TIMESTAMPTZ USING check_out     AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE callbacks        ALTER COLUMN created_at    TYPE TIMESTAMPTZ USING created_at    AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE campaigns        ALTER COLUMN created_at    TYPE TIMESTAMPTZ USING created_at    AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE campaigns        ALTER COLUMN scheduled_at  TYPE TIMESTAMPTZ USING scheduled_at  AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE contacts         ALTER COLUMN joined_at     TYPE TIMESTAMPTZ USING joined_at     AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE customer_queries ALTER COLUMN created_at    TYPE TIMESTAMPTZ USING created_at    AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE faqs             ALTER COLUMN created_at    TYPE TIMESTAMPTZ USING created_at    AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE leads            ALTER COLUMN created_at    TYPE TIMESTAMPTZ USING created_at    AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE messages_log     ALTER COLUMN sent_at       TYPE TIMESTAMPTZ USING sent_at       AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE quiz_responses   ALTER COLUMN responded_at  TYPE TIMESTAMPTZ USING responded_at  AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE quizzes          ALTER COLUMN created_at    TYPE TIMESTAMPTZ USING created_at    AT TIME ZONE current_setting('TimeZone');
+ALTER TABLE reminders        ALTER COLUMN due_at        TYPE TIMESTAMPTZ USING due_at        AT TIME ZONE current_setting('TimeZone');
