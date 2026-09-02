@@ -15,7 +15,7 @@ type CustomerQuery struct {
 }
 
 func SaveCustomerQuery(query CustomerQuery) error {
-	_, err := Pool.Exec(context.Background(), 
+	_, err := Pool.Exec(context.Background(),
 		"INSERT INTO customer_queries (phone_number, user_name, original_message, status) VALUES ($1, $2, $3, 'pending')",
 		query.PhoneNumber, query.UserName, query.OriginalMessage)
 	if err != nil {

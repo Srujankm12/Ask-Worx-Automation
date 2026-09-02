@@ -46,12 +46,16 @@ func tryAutomationModules(phone, rawInput string) bool {
 
 			if isA || isB || isC {
 				ans := "A"
-				if isB { ans = "B" }
-				if isC { ans = "C" }
+				if isB {
+					ans = "B"
+				}
+				if isC {
+					ans = "C"
+				}
 				handleQuizResponse(phone, ans, quiz)
 				return true
 			}
-			// Important: If it's NOT A, B, or C, we just return false 
+			// Important: If it's NOT A, B, or C, we just return false
 			// so the main handler can show the Menu. No more "Selection Force".
 		}
 	}
@@ -138,10 +142,10 @@ func StartQueryFlow(phone, originalMessage string) {
 	// Step 3: Send Button Menu
 	body := "Please select your query type:"
 	buttons := []Button{
-		{ID: "service", Title: "🔧 Service Request"},
-		{ID: "quotation", Title: "💰 Get Quote"},
-		{ID: "product", Title: "🛠️ Product Query"},
-		{ID: "general", Title: "💬 General Inquiry"},
+		{ID: "service", Title: db.ButtonLabel("service", "🔧 Service Request")},
+		{ID: "quotation", Title: db.ButtonLabel("quotation", "💰 Get a Quote")},
+		{ID: "product", Title: db.ButtonLabel("product", "🛠️ Product Query")},
+		{ID: "general", Title: db.ButtonLabel("general", "💬 General Inquiry")},
 	}
 	sendInteractiveButtons(phone, body, buttons)
 
@@ -168,14 +172,14 @@ func handleQueryCategoryReply(phone, upper, rawInput string) {
 	}
 
 	originalMsg := pendingMessages[phone]
-	
+
 	// Step 5: Store Query
 	db.SaveCustomerQuery(db.CustomerQuery{
 		PhoneNumber:     phone,
-		UserName:        "Customer", 
+		UserName:        "Customer",
 		OriginalMessage: originalMsg,
 	})
-	
+
 	// Get the ID of the query to update category
 	q, _ := db.GetLatestPendingQuery(phone)
 	if q.ID != 0 {
@@ -199,7 +203,7 @@ func NotifyTeam(phone, category, message string) {
 		log.Println("[Support] TEAM_WHATSAPP_NUMBER not set — skipping notification")
 		return
 	}
-	
+
 	notification := fmt.Sprintf(
 		"📩 *New Customer Query*\n\n👤 *Number:* +%s\n📂 *Category:* %s\n💬 *Message:* %s",
 		phone, category, message,
@@ -234,19 +238,18 @@ func tryFAQMatch(input string) (string, bool) {
 	return "", false
 }
 
-
 // sendEngagementNudge sends a professional business introduction to convert
 // quiz interest into service inquiries.
 func sendEngagementNudge(phone string) {
-	greeting := fmt.Sprintf("👋 Welcome to %s.\n\n" +
-		"We are a Ground-to-Cloud automation company helping businesses with industrial automation, digital transformation, and smart engineering solutions.\n\n" +
-		"From PLC, SCADA, and IIoT systems to software development, CRM solutions, and digital marketing — we provide complete end-to-end solutions.\n\n" +
+	greeting := fmt.Sprintf("👋 Welcome to %s.\n\n"+
+		"We are a Ground-to-Cloud automation company helping businesses with industrial automation, digital transformation, and smart engineering solutions.\n\n"+
+		"From PLC, SCADA, and IIoT systems to software development, CRM solutions, and digital marketing — we provide complete end-to-end solutions.\n\n"+
 		"How can we assist you today?", os.Getenv("COMPANY_NAME"))
 
 	buttons := []Button{
-		{ID: "flow_service", Title: "🔧 Service Request"},
-		{ID: "flow_quotation", Title: "💰 Get a Quote"},
-		{ID: "flow_callback", Title: "📞 Book Callback"},
+		{ID: "flow_service", Title: db.ButtonLabel("flow_service", "🔧 Service Request")},
+		{ID: "flow_quotation", Title: db.ButtonLabel("flow_quotation", "💰 Get a Quote")},
+		{ID: "flow_callback", Title: db.ButtonLabel("flow_callback", "📞 Book Callback")},
 	}
 
 	sendInteractiveButtons(phone, greeting, buttons)

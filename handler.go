@@ -124,8 +124,8 @@ func handleMessage(phone, input string, lat, lng float64) {
 	}
 
 	// ── Priority 1: Global Command Overrides ─────────────────────────────────
-	if text == "hi" || text == "hello" || text == "hey" || text == "start" || text == "menu" || 
-		strings.Contains(text, "main menu") || input == "main_menu" || 
+	if text == "hi" || text == "hello" || text == "hey" || text == "start" || text == "menu" ||
+		strings.Contains(text, "main menu") || input == "main_menu" ||
 		strings.Contains(text, "need assistance with your industrial platform") {
 		db.UpdateContactOptOutByPhone(phone, false) // Auto-subscribe on interaction
 		sendOpeningMessage(phone)
@@ -133,12 +133,12 @@ func handleMessage(phone, input string, lat, lng float64) {
 	}
 
 	// Gratitude / Thank You Handler
-	if text == "thanks" || text == "thank you" || text == "thx" || text == "tq" || 
+	if text == "thanks" || text == "thank you" || text == "thx" || text == "tq" ||
 		text == "tha k you" || text == "thk you" || text == "thankyou" || text == "great thanks" {
 		msg := fmt.Sprintf("🙏 You're most welcome! I'm glad I could assist you.\n\nI think you are satisfied with the information. If you need *urgent contact*, please reach out to our team directly at:\n\n📞 *+%s*\n\nHave a wonderful day! 😊", os.Getenv("ADMIN_PHONE"))
 		buttons := []Button{
-			{ID: "main_menu", Title: "🏠 Main Menu"},
-			{ID: "talk_to_expert", Title: "📞 Talk to Expert"},
+			{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
+			{ID: "talk_to_expert", Title: db.ButtonLabel("talk_to_expert", "📞 Talk to Expert")},
 		}
 		sendInteractiveButtons(phone, msg, buttons)
 		return
@@ -272,19 +272,19 @@ func sendOpeningMessage(phone string) {
 	body = strings.ReplaceAll(body, "{{company}}", os.Getenv("COMPANY_NAME"))
 
 	buttons := []Button{
-		{ID: "our_solutions", Title: "🔧 Our Solutions"},
-		{ID: "talk_to_expert", Title: "📞 Talk to Expert"},
+		{ID: "our_solutions", Title: db.ButtonLabel("our_solutions", "🔧 Our Solutions")},
+		{ID: "talk_to_expert", Title: db.ButtonLabel("talk_to_expert", "📞 Talk to Expert")},
 		{ID: "about_askworx", Title: fmt.Sprintf("🏭 About %s", os.Getenv("COMPANY_NAME"))},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendHelpMessage(phone string) {
-	msg := "🤖 *ASKworX Support Assistant*\n\nHow can I help you today? You can use the buttons below to navigate or type your query directly."
+	msg := renderTemplate(db.SettingOr("content_help_body", "🤖 *ASKworX Support Assistant*\n\nHow can I help you today? You can use the buttons below to navigate or type your query directly."), "")
 	buttons := []Button{
-		{ID: "main_menu", Title: "🏠 Main Menu"},
-		{ID: "talk_to_expert", Title: "📞 Talk to Expert"},
-		{ID: "our_solutions", Title: "🔧 Our Solutions"},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
+		{ID: "talk_to_expert", Title: db.ButtonLabel("talk_to_expert", "📞 Talk to Expert")},
+		{ID: "our_solutions", Title: db.ButtonLabel("our_solutions", "🔧 Our Solutions")},
 	}
 	sendInteractiveButtons(phone, msg, buttons)
 }
@@ -311,12 +311,12 @@ func handleMainFlow(phone, text string) {
 // --- FLOW: SOLUTIONS ---
 func sendSolutionsMenu(phone string) {
 	sessions[phone] = StateSolutions
-	imageURL := "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800"
-	body := "🔧 Our Solutions — Ground to Cloud Automation\nFrom sensor-level data to cloud intelligence, we engineer the future of manufacturing.\n\n✅ PLC & SCADA Systems\n✅ Industrial Networking & IIoT\n✅ Digital Transformation (Software/ERP)\n✅ ATEX Certified Industrial Products\n✅ AI-Powered Data Analytics\n\nWhat are you looking for?"
+	imageURL := db.SettingOr("content_solutions_image", "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800")
+	body := renderTemplate(db.SettingOr("content_solutions_body", "🔧 Our Solutions — Ground to Cloud Automation\nFrom sensor-level data to cloud intelligence, we engineer the future of manufacturing.\n\n✅ PLC & SCADA Systems\n✅ Industrial Networking & IIoT\n✅ Digital Transformation (Software/ERP)\n✅ ATEX Certified Industrial Products\n✅ AI-Powered Data Analytics\n\nWhat are you looking for?"), "")
 	buttons := []Button{
-		{ID: "industrial_auto", Title: "⚙️ Industrial Auto"},
-		{ID: "digital_software", Title: "💻 Digital & Software"},
-		{ID: "iiot_analytics", Title: "📊 IIoT & Analytics"},
+		{ID: "industrial_auto", Title: db.ButtonLabel("industrial_auto", "⚙️ Industrial Auto")},
+		{ID: "digital_software", Title: db.ButtonLabel("digital_software", "💻 Digital & Software")},
+		{ID: "iiot_analytics", Title: db.ButtonLabel("iiot_analytics", "📊 IIoT & Analytics")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -346,9 +346,9 @@ func sendIndustrialMenu(phone string) {
 		body = "⚙️ Industrial Automation\nThe Foundation: Total Control at Machine Level\n\nWe design, build, and commission high-reliability automation systems engineered for continuous 24/7 industrial operations. Our experts specialize in creating seamless machine-level interfaces that maximize uptime.\n\n🔹 End-to-End System Design\n🔹 Retrofitting & Upgrades\n🔹 Machine Monitoring\n🔹 High-Performance Algorithms\n🔹 Safety-First Engineering\n\nSelect a service to learn more:"
 	}
 	buttons := []Button{
-		{ID: "plc_control", Title: "⚡ PLC & Control"},
-		{ID: "scada_hmi", Title: "🖥️ SCADA & HMI"},
-		{ID: "robotics", Title: "🤖 Robotics"},
+		{ID: "plc_control", Title: db.ButtonLabel("plc_control", "⚡ PLC & Control")},
+		{ID: "scada_hmi", Title: db.ButtonLabel("scada_hmi", "🖥️ SCADA & HMI")},
+		{ID: "robotics", Title: db.ButtonLabel("robotics", "🤖 Robotics")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -368,48 +368,48 @@ func handleIndustrialFlow(phone, text string) {
 
 func sendPLCDetails(phone string) {
 	sessions[phone] = StatePLC
-	imageURL := "https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=800"
-	body := "⚡ PLC & Control Systems\nComplete programmable control solutions for your plant floor.\n\n✅ Micro & Modular PLCs\n✅ Motion Controllers\n✅ Integrated PLC/HMI units\n✅ Variable Frequency Inverters (VFDs)\n✅ AC Servo Drive Systems\n✅ High-speed precision control\n✅ Safety PLC systems\n✅ Redundant control architecture\n\n🎯 Industries served:\nAutomotive | Pharma | Food & Beverage | Packaging | EV & Battery\n\n📞 Contact us for a free consultation and custom quote."
+	imageURL := db.SettingOr("content_plc_image", "https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=800")
+	body := renderTemplate(db.SettingOr("content_plc_body", "⚡ PLC & Control Systems\nComplete programmable control solutions for your plant floor.\n\n✅ Micro & Modular PLCs\n✅ Motion Controllers\n✅ Integrated PLC/HMI units\n✅ Variable Frequency Inverters (VFDs)\n✅ AC Servo Drive Systems\n✅ High-speed precision control\n✅ Safety PLC systems\n✅ Redundant control architecture\n\n🎯 Industries served:\nAutomotive | Pharma | Food & Beverage | Packaging | EV & Battery\n\n📞 Contact us for a free consultation and custom quote."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "next_to_scada", Title: "⏭️ Next Service"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "next_to_scada", Title: db.ButtonLabel("next_to_scada", "⏭️ Next Service")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendSCADADetails(phone string) {
 	sessions[phone] = StateSCADA
-	imageURL := "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800"
-	body := "🖥️ SCADA & HMI Development\nVisualize and control your entire operation from one screen.\n\n✅ Complete SCADA system development\n✅ MC Works64 & industry-standard platforms\n✅ HMI design for intuitive process control\n✅ Real-time monitoring & alarming\n✅ Historical data logging & trending\n✅ Multi-site remote monitoring\n✅ Custom reporting & dashboards\n✅ Mobile access to your plant data\n\n📊 Result: Complete plant visibility in real-time\n\n📞 Contact us for a free consultation and custom quote."
+	imageURL := db.SettingOr("content_scada_image", "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800")
+	body := renderTemplate(db.SettingOr("content_scada_body", "🖥️ SCADA & HMI Development\nVisualize and control your entire operation from one screen.\n\n✅ Complete SCADA system development\n✅ MC Works64 & industry-standard platforms\n✅ HMI design for intuitive process control\n✅ Real-time monitoring & alarming\n✅ Historical data logging & trending\n✅ Multi-site remote monitoring\n✅ Custom reporting & dashboards\n✅ Mobile access to your plant data\n\n📊 Result: Complete plant visibility in real-time\n\n📞 Contact us for a free consultation and custom quote."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "next_to_robotics", Title: "⏭️ Next Service"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "next_to_robotics", Title: db.ButtonLabel("next_to_robotics", "⏭️ Next Service")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendRoboticsDetails(phone string) {
 	sessions[phone] = StateRobotics
-	imageURL := "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800"
-	body := "🤖 Industrial Robotics & Motion\nThe Vanguard: Integrating Advanced Robotics\n\nTurnkey robot integration for modern manufacturing.\n\n✅ High-speed industrial robots\n✅ Collaborative Robots (Cobots)\n✅ Assembly & welding automation\n✅ Material handling systems\n✅ Precision multi-axis motion control\n✅ Vision-guided robotic systems\n✅ Robot programming & commissioning\n✅ After-sales support & training\n\n🎯 Applications:\nAssembly | Welding | Pick & Place | Inspection | Palletizing\n\n📞 Contact us for a free consultation and custom quote."
+	imageURL := db.SettingOr("content_robotics_image", "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800")
+	body := renderTemplate(db.SettingOr("content_robotics_body", "🤖 Industrial Robotics & Motion\nThe Vanguard: Integrating Advanced Robotics\n\nTurnkey robot integration for modern manufacturing.\n\n✅ High-speed industrial robots\n✅ Collaborative Robots (Cobots)\n✅ Assembly & welding automation\n✅ Material handling systems\n✅ Precision multi-axis motion control\n✅ Vision-guided robotic systems\n✅ Robot programming & commissioning\n✅ After-sales support & training\n\n🎯 Applications:\nAssembly | Welding | Pick & Place | Inspection | Palletizing\n\n📞 Contact us for a free consultation and custom quote."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "next_to_panels", Title: "⏭️ Control Panels"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "next_to_panels", Title: db.ButtonLabel("next_to_panels", "⏭️ Control Panels")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendPanelDetails(phone string) {
 	sessions[phone] = StateControlPanel
-	imageURL := "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800"
-	body := "🔌 Control Panel Design & Engineering\nThe Powerhouse: Reliable System Architecture\n\nIEC 61439 standard control panels built for reliability.\n\n✅ Complete panel architecture design\n✅ IEC 61439 international standard\n✅ Low-voltage circuit breakers & contactors\n✅ Motor starters & protection relays\n✅ Power Management Meters\n✅ Energy saving devices\n✅ Full documentation & testing\n✅ FAT & SAT support\n\n🏆 Built for 24/7 industrial operations\n\n📞 Contact us for a free consultation and custom quote."
+	imageURL := db.SettingOr("content_panels_image", "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800")
+	body := renderTemplate(db.SettingOr("content_panels_body", "🔌 Control Panel Design & Engineering\nThe Powerhouse: Reliable System Architecture\n\nIEC 61439 standard control panels built for reliability.\n\n✅ Complete panel architecture design\n✅ IEC 61439 international standard\n✅ Low-voltage circuit breakers & contactors\n✅ Motor starters & protection relays\n✅ Power Management Meters\n✅ Energy saving devices\n✅ Full documentation & testing\n✅ FAT & SAT support\n\n🏆 Built for 24/7 industrial operations\n\n📞 Contact us for a free consultation and custom quote."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "back_to_solutions", Title: "🔙 Back to Solutions"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "back_to_solutions", Title: db.ButtonLabel("back_to_solutions", "🔙 Back to Solutions")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -445,9 +445,9 @@ func sendSoftwareMenu(phone string) {
 		body = "💻 Digital & Software Solutions\nBridging traditional automation with modern digital thinking to scale your business.\n\nFrom automated customer engagement to full-scale enterprise software, we engineer tools that drive growth."
 	}
 	buttons := []Button{
-		{ID: "software_solutions", Title: "💻 Software Solutions"},
-		{ID: "seo_marketing", Title: "📈 SEO & Marketing"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "software_solutions", Title: db.ButtonLabel("software_solutions", "💻 Software Solutions")},
+		{ID: "seo_marketing", Title: db.ButtonLabel("seo_marketing", "📈 SEO & Marketing")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -467,60 +467,60 @@ func handleSoftwareFlow(phone, text string) {
 
 func sendSoftwareSolutionMenu(phone string) {
 	sessions[phone] = StateSoftwareSub
-	imageURL := "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800"
-	body := "💻 Software Solutions\nCustom-engineered software systems to automate and scale your business operations.\n\nSelect a specialized solution:"
+	imageURL := db.SettingOr("content_softwaremenu_image", "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800")
+	body := renderTemplate(db.SettingOr("content_softwaremenu_body", "💻 Software Solutions\nCustom-engineered software systems to automate and scale your business operations.\n\nSelect a specialized solution:"), "")
 	buttons := []Button{
-		{ID: "whatsapp_bot", Title: "📱 WhatsApp Bots"},
-		{ID: "web_app_dev", Title: "🌐 Web & App Dev"},
-		{ID: "industrial_sw", Title: "⚙️ Industrial Software"},
+		{ID: "whatsapp_bot", Title: db.ButtonLabel("whatsapp_bot", "📱 WhatsApp Bots")},
+		{ID: "web_app_dev", Title: db.ButtonLabel("web_app_dev", "🌐 Web & App Dev")},
+		{ID: "industrial_sw", Title: db.ButtonLabel("industrial_sw", "⚙️ Industrial Software")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendWhatsAppBotDetails(phone string) {
 	sessions[phone] = StateWhatsAppBot
-	imageURL := "https://images.unsplash.com/photo-1611746872915-64382b5c76da?w=800"
-	body := "📱 WhatsApp Business Automation\nTransform your Customer Experience with 24/7 Intelligent Automation.\n\n✅ AI-Powered Conversation Flows\n✅ Full CRM & Database Integration\n✅ Automated Lead Qualification\n✅ Order Tracking & Payments\n✅ Multi-agent Admin Dashboard\n✅ Direct Broadcast Management\n\nScale your sales and support without adding headcount."
+	imageURL := db.SettingOr("content_whatsappbot_image", "https://images.unsplash.com/photo-1611746872915-64382b5c76da?w=800")
+	body := renderTemplate(db.SettingOr("content_whatsappbot_body", "📱 WhatsApp Business Automation\nTransform your Customer Experience with 24/7 Intelligent Automation.\n\n✅ AI-Powered Conversation Flows\n✅ Full CRM & Database Integration\n✅ Automated Lead Qualification\n✅ Order Tracking & Payments\n✅ Multi-agent Admin Dashboard\n✅ Direct Broadcast Management\n\nScale your sales and support without adding headcount."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "web_app_dev", Title: "🌐 Web & App Dev"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "web_app_dev", Title: db.ButtonLabel("web_app_dev", "🌐 Web & App Dev")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendWebAppDetails(phone string) {
 	sessions[phone] = StateAppDev
-	imageURL := "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800"
-	body := "🌐 Web & Mobile Portfolio\nEnterprise-grade digital products designed for high performance.\n\n✅ Progressive Web Apps (PWA)\n✅ High-Speed Corporate Websites\n✅ Mobile Apps (Flutter, React Native)\n✅ Headless CMS Solutions\n✅ Serverless API Architecture\n✅ AWS/GCP Cloud Deployment\n\nBuilt for speed, security, and extreme scalability. 🚀"
+	imageURL := db.SettingOr("content_webapp_image", "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800")
+	body := renderTemplate(db.SettingOr("content_webapp_body", "🌐 Web & Mobile Portfolio\nEnterprise-grade digital products designed for high performance.\n\n✅ Progressive Web Apps (PWA)\n✅ High-Speed Corporate Websites\n✅ Mobile Apps (Flutter, React Native)\n✅ Headless CMS Solutions\n✅ Serverless API Architecture\n✅ AWS/GCP Cloud Deployment\n\nBuilt for speed, security, and extreme scalability. 🚀"), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "industrial_sw", Title: "⚙️ Industrial Software"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "industrial_sw", Title: db.ButtonLabel("industrial_sw", "⚙️ Industrial Software")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendIndustrialSoftwareDetails(phone string) {
 	sessions[phone] = StateSoftware
-	imageURL := "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800"
-	body := "⚙️ Industrial & ERP Software\nRobust backend systems to manage your shop floor and business.\n\n✅ Custom ERP & MES Systems\n✅ Real-time Inventory Tracking\n✅ Shop-floor Data Logging\n✅ Predictive Analytics Engines\n✅ Secure Cloud Dashboards\n✅ Desktop Process Monitors\n\nBridging the gap between machinery and business intelligence."
+	imageURL := db.SettingOr("content_indsoftware_image", "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800")
+	body := renderTemplate(db.SettingOr("content_indsoftware_body", "⚙️ Industrial & ERP Software\nRobust backend systems to manage your shop floor and business.\n\n✅ Custom ERP & MES Systems\n✅ Real-time Inventory Tracking\n✅ Shop-floor Data Logging\n✅ Predictive Analytics Engines\n✅ Secure Cloud Dashboards\n✅ Desktop Process Monitors\n\nBridging the gap between machinery and business intelligence."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "seo_marketing", Title: "📈 Digital Marketing"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "seo_marketing", Title: db.ButtonLabel("seo_marketing", "📈 SEO & Marketing")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendSEODetails(phone string) {
 	sessions[phone] = StateSEO
-	imageURL := "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800"
-	body := "📈 Digital Marketing & SEO\nDominating search results and driving high-intent traffic.\n\n✅ Data-Driven SEO Strategies\n✅ ROI-Focused Google Ads (PPC)\n✅ LinkedIn B2B Lead Generation\n✅ Social Media Brand Positioning\n✅ Content Authority Building\n✅ Advanced Analytics & Tracking\n\nWe don't just get traffic; we get paying customers."
+	imageURL := db.SettingOr("content_seo_image", "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800")
+	body := renderTemplate(db.SettingOr("content_seo_body", "📈 Digital Marketing & SEO\nDominating search results and driving high-intent traffic.\n\n✅ Data-Driven SEO Strategies\n✅ ROI-Focused Google Ads (PPC)\n✅ LinkedIn B2B Lead Generation\n✅ Social Media Brand Positioning\n✅ Content Authority Building\n✅ Advanced Analytics & Tracking\n\nWe don't just get traffic; we get paying customers."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "back_to_software", Title: "🔙 Software Menu"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "back_to_software", Title: db.ButtonLabel("back_to_software", "🔙 Software Menu")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -558,9 +558,9 @@ func sendIIoTMenu(phone string) {
 		body = "📊 IIoT & Analytics Solutions\nConnecting your plant to the cloud.\n\nSelect a service:"
 	}
 	buttons := []Button{
-		{ID: "iiot_gateway", Title: "🌐 IIoT Gateway"},
-		{ID: "cloud_analytics", Title: "☁️ Cloud Analytics"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "iiot_gateway", Title: db.ButtonLabel("iiot_gateway", "🌐 IIoT Gateway")},
+		{ID: "cloud_analytics", Title: db.ButtonLabel("cloud_analytics", "☁️ Cloud Analytics")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -580,24 +580,24 @@ func handleIIoTFlow(phone, text string) {
 
 func sendIIoTGatewayDetails(phone string) {
 	sessions[phone] = StateIIoTGateway
-	imageURL := "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800"
-	body := "🌐 IIoT Gateway Solutions\nThe Bridge: Connecting Your Plant to the Cloud\n\n✅ Industrial IoT gateway deployment\n✅ Machine-to-cloud connectivity\n✅ OPC-UA, Modbus, MQTT protocols\n✅ Secure encrypted data transfer\n✅ Edge computing solutions\n\n📞 Contact us for a free consultation."
+	imageURL := db.SettingOr("content_gateway_image", "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800")
+	body := renderTemplate(db.SettingOr("content_gateway_body", "🌐 IIoT Gateway Solutions\nThe Bridge: Connecting Your Plant to the Cloud\n\n✅ Industrial IoT gateway deployment\n✅ Machine-to-cloud connectivity\n✅ OPC-UA, Modbus, MQTT protocols\n✅ Secure encrypted data transfer\n✅ Edge computing solutions\n\n📞 Contact us for a free consultation."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "next_to_analytics", Title: "⏭️ Cloud Analytics"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "next_to_analytics", Title: db.ButtonLabel("next_to_analytics", "⏭️ Cloud Analytics")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
 
 func sendCloudAnalyticsDetails(phone string) {
 	sessions[phone] = StateCloudAnalytics
-	imageURL := "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800"
-	body := "☁️ Cloud Insights & Analytics\nTransforming Data into Operational Intelligence\n\n✅ Real-time production dashboards\n✅ OEE tracking & reporting\n✅ Predictive maintenance alerts\n✅ Energy consumption monitoring\n\n📊 Our customers achieve 99.9% visibility."
+	imageURL := db.SettingOr("content_analytics_image", "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800")
+	body := renderTemplate(db.SettingOr("content_analytics_body", "☁️ Cloud Insights & Analytics\nTransforming Data into Operational Intelligence\n\n✅ Real-time production dashboards\n✅ OEE tracking & reporting\n✅ Predictive maintenance alerts\n✅ Energy consumption monitoring\n\n📊 Our customers achieve 99.9% visibility."), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "back_to_solutions", Title: "🔙 Back to Solutions"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "back_to_solutions", Title: db.ButtonLabel("back_to_solutions", "🔙 Back to Solutions")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -673,12 +673,13 @@ func handleQuotePhone(phone, input string) {
 // --- FLOW: EXPERT / CALLBACK ---
 func sendExpertContact(phone string) {
 	sessions[phone] = StateExpert
-	imageURL := "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=800"
-	body := fmt.Sprintf("📞 %s Support Center\nHow can we help you today?\n\nSelect a category below to connect with the right expert.", os.Getenv("COMPANY_NAME"))
+	imageURL := db.SettingOr("content_expert_image", "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=800")
+	body := renderTemplate(db.SettingOr("support_center",
+		"*{{company}} support*\nHow can we help?\n\nChoose a category below."), "")
 	buttons := []Button{
-		{ID: "service", Title: "🔧 Service Request"},
-		{ID: "quotation", Title: "📈 Request Quotation"},
-		{ID: "technical", Title: "🛠️ Technical Query"},
+		{ID: "service", Title: db.ButtonLabel("service", "🔧 Service Request")},
+		{ID: "quotation", Title: db.ButtonLabel("quotation", "💰 Get a Quote")},
+		{ID: "technical", Title: db.ButtonLabel("technical", "🛠️ Technical Query")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -712,9 +713,9 @@ func StartCategoryQueryFlow(phone, categoryID string) {
 
 	body := fmt.Sprintf("✅ *Selected:* %s\n\nWhich service area can we help you with?", label)
 	buttons := []Button{
-		{ID: "cat_automation", Title: "⚙️ Industrial Auto"},
-		{ID: "cat_app_dev", Title: "💻 Digital & Software"},
-		{ID: "cat_marketing", Title: "📊 IIoT & Analytics"},
+		{ID: "cat_automation", Title: db.ButtonLabel("cat_automation", "⚙️ Industrial Auto")},
+		{ID: "cat_app_dev", Title: db.ButtonLabel("cat_app_dev", "💻 Digital & Software")},
+		{ID: "cat_marketing", Title: db.ButtonLabel("cat_marketing", "📈 Digital Marketing")},
 	}
 	sendInteractiveButtons(phone, body, buttons)
 }
@@ -738,7 +739,7 @@ func handleCallbackRequest(phone, input string) {
 	sessions[phone] = StateMain
 	body := fmt.Sprintf("✅ Callback Scheduled!\nOur expert will call you at the requested time.\n\n📞 We will call from: +%s\n\nThank you for choosing %s! 🙏", os.Getenv("ADMIN_PHONE"), os.Getenv("COMPANY_NAME"))
 	buttons := []Button{
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendInteractiveButtons(phone, body, buttons)
 	sendOpeningMessage(phone)
@@ -757,9 +758,9 @@ func sendAboutASKworX(phone string) {
 	}
 
 	buttons := []Button{
-		{ID: "our_industries", Title: "🏭 Our Industries"},
-		{ID: "our_solutions", Title: "🔧 Our Solutions"},
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
+		{ID: "our_industries", Title: db.ButtonLabel("our_industries", "🏭 Our Industries")},
+		{ID: "our_solutions", Title: db.ButtonLabel("our_solutions", "🔧 Our Solutions")},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
 }
@@ -779,11 +780,11 @@ func handleAboutFlow(phone, text string) {
 
 func sendIndustriesPage(phone string) {
 	sessions[phone] = StateIndustries
-	body := "🏭 Industries We Serve\n🚗 Automotive | 🔋 EV | 💊 Pharma | 🍔 Food & Bev | 📦 Material Handling | 👕 Textiles | EMS | Oil & Gas\n\nWe work with ALL manufacturing sectors!"
+	body := renderTemplate(db.SettingOr("content_industries_body", "🏭 Industries We Serve\n🚗 Automotive | 🔋 EV | 💊 Pharma | 🍔 Food & Bev | 📦 Material Handling | 👕 Textiles | EMS | Oil & Gas\n\nWe work with ALL manufacturing sectors!"), "")
 	buttons := []Button{
-		{ID: "get_free_quote", Title: "💬 Get Free Quote"},
-		{ID: "our_solutions", Title: "🔧 Our Solutions"},
-		{ID: "main_menu", Title: "🏠 Main Menu"},
+		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
+		{ID: "our_solutions", Title: db.ButtonLabel("our_solutions", "🔧 Our Solutions")},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendInteractiveButtons(phone, body, buttons) // No image here, keeping it as interactive only
 }
@@ -809,9 +810,9 @@ func startLeadServiceFlow(phone string) {
 	body := "Here are our key services. What kind of service are you looking for?"
 
 	buttons := []Button{
-		{ID: "cat_automation", Title: "⚙️ Industrial/PLC"},
-		{ID: "cat_app_dev", Title: "💻 Application Dev"},
-		{ID: "cat_marketing", Title: "📈 Digital Marketing"},
+		{ID: "cat_automation", Title: db.ButtonLabel("cat_automation", "⚙️ Industrial Auto")},
+		{ID: "cat_app_dev", Title: db.ButtonLabel("cat_app_dev", "💻 Digital & Software")},
+		{ID: "cat_marketing", Title: db.ButtonLabel("cat_marketing", "📈 Digital Marketing")},
 	}
 	sendInteractiveButtons(phone, body, buttons)
 }
@@ -962,17 +963,11 @@ func handleLeadCallTime(phone, input string) {
 }
 
 func sendExploreServices(phone string) {
-	body := "Here’s what we offer:\n\n" +
-		"🔧 Industrial Automation\n" +
-		"⚙️ PLC / SCADA / IIoT\n" +
-		"🛠️ ATEX Products\n" +
-		"💻 Software Development (CRM, ERP, Apps)\n" +
-		"📈 Digital Marketing Solutions\n\n" +
-		"Would you like to:"
+	body := renderTemplate(db.SettingOr("content_explore_body", "Here’s what we offer:\n\n🔧 Industrial Automation\n⚙️ PLC / SCADA / IIoT\n🛠️ ATEX Products\n💻 Software Development (CRM, ERP, Apps)\n📈 Digital Marketing Solutions\n\nWould you like to:"), "")
 
 	buttons := []Button{
-		{ID: "quotation", Title: "1️⃣ Request Quotation"},
-		{ID: "callback", Title: "2️⃣ Book a Callback"},
+		{ID: "quotation", Title: db.ButtonLabel("quotation", "💰 Get a Quote")},
+		{ID: "callback", Title: db.ButtonLabel("callback", "2️⃣ Book a Callback")},
 	}
 
 	sendInteractiveButtons(phone, body, buttons)
@@ -980,7 +975,7 @@ func sendExploreServices(phone string) {
 
 func sendFAQPrompt(phone string) {
 	sessions[phone] = StateFAQ
-	msg := fmt.Sprintf("🤖 *%s Support Assistant*\n\nI can answer questions about our services, location, and technical capabilities.\n\n*Go ahead, ask me anything!* (e.g., 'What is SCADA?' or 'Where is your office?')", os.Getenv("COMPANY_NAME"))
+	msg := renderTemplate(db.SettingOr("content_faqprompt_body", "🤖 *{{company}} Support Assistant*\n\nI can answer questions about our services, location, and technical capabilities.\n\n*Go ahead, ask me anything!* (e.g., 'What is SCADA?' or 'Where is your office?')"), "")
 	sendTextMessage(phone, msg)
 }
 
@@ -1006,7 +1001,7 @@ func handleFAQFlow(phone, input string) {
 
 func sendFAQAnswer(phone, answer string) {
 	buttons := []Button{
-		{ID: "main_menu", Title: "Main Menu 🏠"},
+		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendInteractiveButtons(phone, answer, buttons)
 }

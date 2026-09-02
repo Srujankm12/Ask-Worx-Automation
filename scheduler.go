@@ -60,8 +60,8 @@ func InitScheduler() {
 			msg = strings.ReplaceAll(msg, "Type *MENU* anytime to explore our solutions!", "")
 
 			buttons := []Button{
-				{ID: "main_menu", Title: "🏠 Explore Menu"},
-				{ID: "opt_out", Title: "🛑 Stop Messages"},
+				{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
+				{ID: "opt_out", Title: db.ButtonLabel("opt_out", "🛑 Stop Messages")},
 			}
 			sendInteractiveButtons(p, msg, buttons)
 		}
@@ -95,11 +95,14 @@ func InitScheduler() {
 		}
 		for _, r := range due {
 			log.Printf("[Scheduler] Sending reminder #%d to %s", r.ID, r.Phone)
-			msg := "⚡ *A C T I O N   R E Q U I R E D* ⚡\n\n" +
-				"Champion, the following priority objective requires your expertise:\n\n" +
-				"🎯 *" + r.Desc + "*\n\n" +
-				"Excellence lies in execution. Bring your best to the field today and let's continue pioneering the standard in Smart Automation! 🚀\n\n" +
-				"Regards,\n*" + os.Getenv("COMPANY_NAME") + " Team*"
+			// {{task}} is specific to this template, so it is substituted here
+			// rather than in renderTemplate, which only knows the three
+			// placeholders every message shares.
+			msg := strings.ReplaceAll(
+				renderTemplate(db.SettingOr("emp_reminder",
+					"*Reminder*\n\n{{task}}\n\n— {{company}}"),
+					db.GetEmployeeName(r.Phone)),
+				"{{task}}", r.Desc)
 			sendFAQAnswer(r.Phone, msg)
 			db.MarkReminderSent(r.ID)
 		}
@@ -211,8 +214,8 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 	)
 
 	buttons := []Button{
-		{ID: "expert", Title: "Talk to Expert 📞"},
-		{ID: "menu", Title: "Main Menu 🏠"},
+		{ID: "expert", Title: db.ButtonLabel("expert", "Talk to Expert 📞")},
+		{ID: "menu", Title: db.ButtonLabel("menu", "Main Menu 🏠")},
 	}
 
 	for _, phone := range phones {

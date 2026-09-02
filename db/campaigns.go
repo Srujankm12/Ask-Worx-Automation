@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -76,6 +77,10 @@ func GetAllCampaigns() ([]Campaign, error) {
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
+			// Silently dropping the row hid a whole page of campaigns behind a
+			// 200 with an empty list. Skipping is still the right recovery, but
+			// it has to leave a trace.
+			log.Printf("[Campaigns] skipping unreadable row: %v", err)
 			continue
 		}
 		campaigns = append(campaigns, c)
@@ -202,6 +207,10 @@ func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, er
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
+			// Silently dropping the row hid a whole page of campaigns behind a
+			// 200 with an empty list. Skipping is still the right recovery, but
+			// it has to leave a trace.
+			log.Printf("[Campaigns] skipping unreadable row: %v", err)
 			continue
 		}
 		campaigns = append(campaigns, c)

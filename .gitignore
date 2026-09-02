@@ -29,3 +29,6 @@ dist-ssr/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local dev build artefact
+_devserver
