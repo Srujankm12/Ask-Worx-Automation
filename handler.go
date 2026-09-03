@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"askworx-whatsapp-bot/db"
 )
@@ -84,7 +85,32 @@ var tempQuotes = map[string]*TempQuote{}
 var tempLeads = map[string]*TempLead{}
 var tempCallbacks = map[string]string{}
 
+// stateMu guards every package-level conversation map in this program:
+// sessions, tempQuotes, tempLeads and tempCallbacks here, internalSessions in
+// internal.go, and pendingMessages and quizSessionStore in automation.go.
+//
+// webhook.go starts a fresh goroutine per inbound message, and those maps were
+// read and written with no synchronisation at all. Concurrent map access is a
+// fatal runtime throw in Go, not a panic — middleware.Recoverer cannot recover
+// it and the process dies. Two customers messaging at the same moment was
+// enough to take the bot down.
+//
+// One lock held for the whole of handleMessage is deliberate rather than
+// per-map: handleMessage is the only entry point that reaches any of this
+// state (every cron path in scheduler.go touches none of it), and nothing
+// inside re-acquires the lock, so it cannot deadlock. The cost is that
+// conversations are handled one at a time; sendToMeta now carries an HTTP
+// timeout so a hung call to Meta cannot hold the lock open indefinitely.
+//
+// The right long-term shape is a per-phone lock plus guarded map accessors, so
+// two different customers are handled concurrently. That is a change across
+// roughly ninety call sites and does not belong in a same-night patch.
+var stateMu sync.Mutex
+
 func handleMessage(phone, input string, lat, lng float64) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+
 	text := strings.ToLower(strings.TrimSpace(input))
 	db.SaveContact(phone, "")
 

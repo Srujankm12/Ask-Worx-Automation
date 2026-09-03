@@ -9,9 +9,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"askworx-whatsapp-bot/db"
 )
+
+// One shared client, so connections are pooled and every call is bounded.
+var metaClient = &http.Client{Timeout: 20 * time.Second}
 
 type Button struct {
 	ID    string
@@ -136,8 +140,10 @@ func sendToMeta(payload map[string]interface{}, to, logMsg string) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Without a timeout a hung connection to Meta blocks this goroutine for
+	// ever, and since handleMessage holds stateMu across its sends, it would
+	// block every other conversation with it.
+	resp, err := metaClient.Do(req)
 	if err != nil {
 		log.Println("Error sending to Meta:", err)
 		return

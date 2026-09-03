@@ -30,7 +30,7 @@ func InitScheduler() {
 		for _, e := range emps {
 			template := db.GetSetting("greeting_employee")
 			if template == "" {
-				template = fmt.Sprintf("🌅 *Good Morning, {{name}}!* 🏆\n\nAnother day to pioneer industrial excellence. Don't forget to **Start Your Day** in the Internal Hub to log your focus objectives.\n\nLet's make an impact! 🚀", os.Getenv("COMPANY_NAME"))
+				template = "🌅 *Good Morning, {{name}}!* 🏆\n\nAnother day to pioneer industrial excellence. Don't forget to **Start Your Day** in the Internal Hub to log your focus objectives.\n\nLet's make an impact! 🚀"
 			}
 			msg := strings.ReplaceAll(template, "{{name}}", e.Name)
 			sendEmployeeDashboard(e.Phone) // This will trigger the dashboard buttons
@@ -129,6 +129,18 @@ func InitScheduler() {
 		}
 
 		for _, camp := range campaigns {
+			// Claim it first. Sending takes longer than the one-minute tick,
+			// so without this the next run picks the same row up and
+			// broadcasts the whole campaign again.
+			claimed, err := db.ClaimCampaign(camp.ID)
+			if err != nil {
+				log.Printf("[Scheduler] Could not claim campaign #%d, skipping: %v", camp.ID, err)
+				continue
+			}
+			if !claimed {
+				continue
+			}
+
 			log.Printf("[Scheduler] Broadcasting campaign #%d (%s) to %d contacts", camp.ID, camp.Type, len(phones))
 
 			switch strings.ToLower(camp.Type) {
@@ -138,7 +150,9 @@ func InitScheduler() {
 				broadcastPoster(camp, phones)
 			}
 
-			db.MarkCampaignSent(camp.ID, len(phones))
+			if err := db.MarkCampaignSent(camp.ID, len(phones)); err != nil {
+				log.Printf("[Scheduler] Campaign #%d was sent but could not be marked sent: %v", camp.ID, err)
+			}
 		}
 	})
 	if err != nil {
@@ -160,7 +174,7 @@ func broadcastQuiz(camp db.Campaign, phones []string) {
 			"📍 *B:* %s\n"+
 			"📍 *C:* %s\n\n"+
 			"👉 *Tap your answer below to participate!*",
-		camp.Question, camp.OptionA, camp.OptionB, camp.OptionC,
+		os.Getenv("COMPANY_NAME"), camp.Question, camp.OptionA, camp.OptionB, camp.OptionC,
 	)
 
 	buttons := []Button{
@@ -210,7 +224,7 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 			"──────────────────⬡\n"+
 			"🌐 *Visit us:* www.askworx.in\n"+
 			"📧 *Support:* contact@askworx.in",
-		camp.Caption,
+		os.Getenv("COMPANY_NAME"), camp.Caption,
 	)
 
 	buttons := []Button{

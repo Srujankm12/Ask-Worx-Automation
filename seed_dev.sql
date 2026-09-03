@@ -97,7 +97,7 @@ INSERT INTO reminders (employee_phone, description, due_at, status) VALUES
 
 -- ── Campaigns ───────────────────────────────────────────────────────────────
 INSERT INTO campaigns (type, question, option_a, option_b, option_c, correct_answer, explanation, image_url, caption, scheduled_at, status, total_sent, created_at) VALUES
-  ('quiz',   'Which protocol is designed for machine-to-machine communication over TCP/IP in industrial settings?', 'HTTP', 'OPC UA', 'FTP', 'B', 'OPC UA is platform-independent and carries both data and its meaning, which is why it has become the default for plant-to-cloud links.', '', '', '', now() + interval '2 days', 'pending', 0,  now() - interval '1 day'),
+  ('quiz',   'Which protocol is designed for machine-to-machine communication over TCP/IP in industrial settings?', 'HTTP', 'OPC UA', 'FTP', 'B', 'OPC UA is platform-independent and carries both data and its meaning, which is why it has become the default for plant-to-cloud links.', '', '', '', now() + interval '2 days', 'scheduled', 0,  now() - interval '1 day'),
   ('quiz',   'What does a VFD primarily control in an induction motor?',                                            'Torque only', 'Speed and torque', 'Direction only', 'B', 'A variable frequency drive varies supply frequency and voltage together, so it controls both speed and available torque.', '', '', '', now() - interval '7 days', 'sent', 128, now() - interval '10 days'),
   ('poster', '', '', '', '', '', '', '', '/uploads/sample-poster.png', 'Ground to Cloud — our SCADA and IIoT capability, in one page.', now() - interval '14 days', 'sent', 214, now() - interval '16 days');
 
