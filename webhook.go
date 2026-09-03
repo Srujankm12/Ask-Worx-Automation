@@ -2,12 +2,54 @@ package main
 
 import (
 	"askworx-whatsapp-bot/db"
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 )
+
+// maxWebhookBody caps what will be read from a POST, so an oversized or
+// endless body cannot be pulled into memory.
+const maxWebhookBody = 1 << 20 // 1 MiB
+
+// verifyMetaSignature checks the X-Hub-Signature-256 header Meta sends with
+// every webhook delivery, computed over the raw body with the app secret.
+//
+// This was not checked at all. The endpoint is public by necessity, so without
+// it anybody who learned the URL could post whatever they liked: fabricate
+// inbound messages, create leads, and make the bot send WhatsApp messages to
+// numbers of their choosing on the business account.
+func verifyMetaSignature(body []byte, header string) bool {
+	appSecret := os.Getenv("META_APP_SECRET")
+	if appSecret == "" {
+		// Only tolerated outside production; main refuses to boot without it
+		// when ENV is production.
+		if isProduction() {
+			return false
+		}
+		log.Println("⚠️  META_APP_SECRET is not set — webhook signatures are NOT being verified")
+		return true
+	}
+
+	const prefix = "sha256="
+	if !strings.HasPrefix(header, prefix) {
+		return false
+	}
+	want, err := hex.DecodeString(strings.TrimPrefix(header, prefix))
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(appSecret))
+	mac.Write(body)
+	return hmac.Equal(mac.Sum(nil), want)
+}
 
 type WebhookRequest struct {
 	Entry []struct {
@@ -66,7 +108,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("hub.verify_token")
 		challenge := r.URL.Query().Get("hub.challenge")
 
-		if mode == "subscribe" && token == verifyToken {
+		if mode == "subscribe" && constantTimeEqual(token, verifyToken) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(challenge))
 			return
@@ -76,9 +118,21 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
-		var req WebhookRequest
-		err := json.NewDecoder(r.Body).Decode(&req)
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 		if err != nil {
+			log.Printf("[Webhook] Could not read the request body: %v", err)
+			w.WriteHeader(http.StatusOK) // Always return 200 so Meta stops retrying
+			return
+		}
+
+		if !verifyMetaSignature(body, r.Header.Get("X-Hub-Signature-256")) {
+			log.Println("⚠️  [Webhook] Rejected a delivery with a missing or invalid signature")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		var req WebhookRequest
+		if err := json.NewDecoder(bytes.NewReader(body)).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusOK) // Always return 200
 			return
 		}
