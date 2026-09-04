@@ -27,6 +27,35 @@ func LogMessage(phone, direction, message string, waID ...string) error {
 	return err
 }
 
+// LogIncomingMessage records an inbound message and reports whether this call
+// is the one that actually stored it.
+//
+// Meta delivers every webhook at least once, and in practice sends each
+// message twice — two POSTs in the same second, carrying the same wa_msg_id.
+// The unique index deduplicated the log, so the conversation looked correct,
+// but webhook.go handed both copies to handleMessage and the bot answered
+// every customer twice.
+//
+// The insert is the lock: exactly one caller sees a row affected, and only
+// that caller should act on the message. A message with no id cannot be
+// deduplicated, so it is processed — answering twice is better than staying
+// silent.
+func LogIncomingMessage(phone, message, waID string) (bool, error) {
+	if waID == "" {
+		return true, LogMessage(phone, "incoming", message)
+	}
+
+	tag, err := Pool.Exec(context.Background(),
+		`INSERT INTO messages_log (phone, direction, message, wa_msg_id)
+		 VALUES ($1, 'incoming', $2, $3)
+		 ON CONFLICT (wa_msg_id) DO NOTHING`,
+		phone, message, waID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // Alias for consistency
 func SaveMessageHistory(phone, message, direction string) error {
 	return LogMessage(phone, direction, message)

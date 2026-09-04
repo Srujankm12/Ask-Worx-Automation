@@ -173,8 +173,19 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 					}
 
 					if text != "" {
+						// Only the delivery that actually stored the message
+						// gets to act on it. Meta sends each one twice.
+						fresh, err := db.LogIncomingMessage(phone, text, msg.ID)
+						if err != nil {
+							log.Printf("[Webhook] Could not log a message from %s: %v", phone, err)
+							continue
+						}
+						if !fresh {
+							log.Printf("[Webhook] Ignoring a repeat delivery of %s from %s", msg.ID, phone)
+							continue
+						}
+
 						log.Printf("[Webhook] Incoming from %s: %s", phone, text)
-						db.LogMessage(phone, "incoming", text, msg.ID)
 						go handleMessage(phone, text, lat, lng)
 					}
 				}
