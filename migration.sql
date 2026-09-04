@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     caption TEXT,
     -- Scheduling & state
     scheduled_at TIMESTAMP NOT NULL,
-    status VARCHAR DEFAULT 'scheduled', -- scheduled | sent | cancelled
+    status VARCHAR DEFAULT 'scheduled', -- scheduled | sending | sent | cancelled
     total_sent INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -133,3 +133,24 @@ ALTER TABLE messages_log     ALTER COLUMN sent_at       TYPE TIMESTAMPTZ USING s
 ALTER TABLE quiz_responses   ALTER COLUMN responded_at  TYPE TIMESTAMPTZ USING responded_at  AT TIME ZONE current_setting('TimeZone');
 ALTER TABLE quizzes          ALTER COLUMN created_at    TYPE TIMESTAMPTZ USING created_at    AT TIME ZONE current_setting('TimeZone');
 ALTER TABLE reminders        ALTER COLUMN due_at        TYPE TIMESTAMPTZ USING due_at        AT TIME ZONE current_setting('TimeZone');
+
+-- ── Console sign-in ─────────────────────────────────────────────────────────
+-- Accounts that can sign in to the admin panel. Only the bcrypt hash is kept;
+-- the password itself is never stored or logged. The first account is seeded
+-- from ADMIN_EMAIL / ADMIN_PASSWORD on a fresh deployment.
+CREATE TABLE IF NOT EXISTS admin_users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(320) NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── Indexes ─────────────────────────────────────────────────────────────────
+-- messages_log had none. The inbox filters by phone and the dashboard filters
+-- by date, so both were sequential scans over a table that only ever grows.
+CREATE INDEX IF NOT EXISTS idx_messages_log_phone_id ON messages_log (phone, id);
+CREATE INDEX IF NOT EXISTS idx_messages_log_sent_at  ON messages_log (sent_at);
+CREATE INDEX IF NOT EXISTS idx_leads_created_at      ON leads (created_at);
+CREATE INDEX IF NOT EXISTS idx_leads_status          ON leads (status);
+CREATE INDEX IF NOT EXISTS idx_callbacks_status      ON callbacks (status);
+CREATE INDEX IF NOT EXISTS idx_campaigns_due         ON campaigns (status, scheduled_at);

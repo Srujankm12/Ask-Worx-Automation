@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -26,13 +27,24 @@ func InitDB() error {
 		return err
 	}
 
+	// pgxpool connects lazily, so without this the process starts and reports
+	// healthy against a database it can never reach, and every request fails
+	// one at a time instead.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := Pool.Ping(ctx); err != nil {
+		return fmt.Errorf("could not reach the database: %w", err)
+	}
+
 	// Run migration
+	// A failed migration used to print "Migration warning" and carry on, which
+	// left the service running against a schema that did not match the code.
 	migration, err := os.ReadFile("migration.sql")
-	if err == nil {
-		_, err = Pool.Exec(context.Background(), string(migration))
-		if err != nil {
-			fmt.Printf("Migration warning: %v\n", err)
-		}
+	if err != nil {
+		return fmt.Errorf("could not read migration.sql (it must ship alongside the binary): %w", err)
+	}
+	if _, err := Pool.Exec(context.Background(), string(migration)); err != nil {
+		return fmt.Errorf("migration failed: %w", err)
 	}
 
 	// Hot-fix: Ensure campaign_id exists in quizzes

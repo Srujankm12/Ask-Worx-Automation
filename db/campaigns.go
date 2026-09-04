@@ -20,7 +20,7 @@ type Campaign struct {
 	ImageURL      string    `json:"image_url"`
 	Caption       string    `json:"caption"`
 	ScheduledAt   time.Time `json:"scheduled_at"`
-	Status        string    `json:"status"` // scheduled | sent | cancelled
+	Status        string    `json:"status"` // scheduled | sending | sent | cancelled
 	TotalSent     int       `json:"total_sent"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -108,6 +108,30 @@ func GetDueCampaigns() ([]Campaign, error) {
 		campaigns = append(campaigns, c)
 	}
 	return campaigns, nil
+}
+
+// ClaimCampaign takes a due campaign out of the queue before anything is sent,
+// and reports whether this caller is the one that got it.
+//
+// The broadcaster cron runs every minute, and MarkCampaignSent was only called
+// after the whole send loop finished. A broadcast to a few hundred contacts is
+// a few hundred serial calls to Meta and takes well over a minute, so the next
+// tick re-selected the same 'scheduled' row and sent the entire campaign a
+// second time. The UPDATE is guarded on the current status and the database
+// applies it atomically, so exactly one caller sees a row affected — which
+// also makes this safe if the service is ever run as more than one instance.
+//
+// A campaign left in 'sending' means the process died mid-broadcast. That is
+// deliberately not retried automatically: re-sending to contacts who already
+// received it is worse than leaving it visible in the panel for someone to
+// decide about.
+func ClaimCampaign(id int) (bool, error) {
+	tag, err := Pool.Exec(context.Background(),
+		`UPDATE campaigns SET status = 'sending' WHERE id = $1 AND status = 'scheduled'`, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // MarkCampaignSent updates status to 'sent' and records total_sent count.

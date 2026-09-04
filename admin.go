@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,16 +27,50 @@ func AdminRoutes() chi.Router {
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		os.Mkdir(uploadDir, 0755)
 	}
-	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
+	// Served publicly so Meta can fetch poster images. X-Content-Type-Options
+	// stops a browser sniffing one of these into something executable, and the
+	// CSP is a second line behind the image-only check on the upload itself.
+	r.Handle("/uploads/*", http.StripPrefix("/uploads/",
+		func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Content-Type-Options", "nosniff")
+				w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self'")
+				next.ServeHTTP(w, r)
+			})
+		}(http.FileServer(http.Dir(uploadDir)))))
 
 	r.Post("/upload", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseMultipartForm(10 << 20) // 10MB max
+		// Cap the whole request, not just what is buffered in memory.
+		// ParseMultipartForm alone spills the remainder to disk, so a large
+		// upload could fill the volume.
+		const maxUpload = 8 << 20 // 8 MiB
+		r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
+		if err := r.ParseMultipartForm(maxUpload); err != nil {
+			http.Error(w, "That file is too large. The limit is 8 MB.", http.StatusRequestEntityTooLarge)
+			return
+		}
+
 		file, handler, err := r.FormFile("file")
 		if err != nil {
 			http.Error(w, "error retrieving file", http.StatusBadRequest)
 			return
 		}
 		defer file.Close()
+
+		// Only images. These files are served back from this origin, so
+		// accepting arbitrary types would let an uploaded .html or .svg run
+		// script against the API's own origin.
+		head := make([]byte, 512)
+		n, _ := file.Read(head)
+		contentType := http.DetectContentType(head[:n])
+		if !strings.HasPrefix(contentType, "image/") {
+			http.Error(w, "Only image files can be uploaded.", http.StatusUnsupportedMediaType)
+			return
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "Could not read that file.", http.StatusInternalServerError)
+			return
+		}
 
 		safeFilename := strings.ReplaceAll(handler.Filename, " ", "_")
 		filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(safeFilename))
@@ -175,16 +210,50 @@ func AdminRoutes() chi.Router {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Bounded. This used to call GetAllMessages, which has no LIMIT — the
+	// handler returned every row ever written and ignored the limit the client
+	// sent, so the payload grew without bound for the life of the deployment.
 	r.Get("/messages", func(w http.ResponseWriter, r *http.Request) {
-		messages, _ := db.GetAllMessages()
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+		messages, total, err := db.GetMessagesPage(limit, offset)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not read the message log.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": messages, "total": total})
+	})
+
+	// Per-day and per-hour counts for the dashboard charts, aggregated in the
+	// database rather than by shipping the log to the browser.
+	r.Get("/messages/summary", func(w http.ResponseWriter, r *http.Request) {
+		days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+		summary, err := db.GetMessageSummary(days)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not read the conversation summary.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+	})
+
+	// ?after_id=N returns only what is newer, so the inbox poll does not refetch
+	// the whole conversation every few seconds.
+	r.Get("/messages/{phone}", func(w http.ResponseWriter, r *http.Request) {
+		phone := chi.URLParam(r, "phone")
+		afterID, _ := strconv.Atoi(r.URL.Query().Get("after_id"))
+
+		messages, err := db.GetMessagesByPhoneAfter(phone, afterID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not read that conversation.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(messages)
 	})
 
-	r.Get("/messages/{phone}", func(w http.ResponseWriter, r *http.Request) {
-		phone := chi.URLParam(r, "phone")
-		messages, _ := db.GetMessagesByPhone(phone)
-		json.NewEncoder(w).Encode(messages)
-	})
 
 	r.Post("/send-message", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -505,60 +574,4 @@ func parseCommonParams(r *http.Request) (limit, offset int, start, end string) {
 	start = r.URL.Query().Get("start_date")
 	end = r.URL.Query().Get("end_date")
 	return
-}
-
-func AuthHandler(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Password string `json:"password"`
-	}
-	json.NewDecoder(r.Body).Decode(&body)
-
-	if body.Password == os.Getenv("ADMIN_PASSWORD") {
-		secret := os.Getenv("API_SECRET")
-		if secret == "" {
-			secret = "dummy-token-askworx"
-		}
-		json.NewEncoder(w).Encode(map[string]string{"token": secret})
-	} else {
-		w.WriteHeader(http.StatusUnauthorized)
-	}
-}
-
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for login and public uploads
-		// Note: chi might have different paths depending on where it's mounted
-		path := r.URL.Path
-		if path == "/api/login" || path == "/login" ||
-			strings.HasPrefix(path, "/uploads") ||
-			strings.HasPrefix(path, "/api/uploads") {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
-			return
-		}
-
-		token := parts[1]
-		secret := os.Getenv("API_SECRET")
-		if secret == "" {
-			secret = "dummy-token-askworx"
-		}
-
-		if token != secret {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
