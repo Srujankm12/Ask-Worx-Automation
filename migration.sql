@@ -144,3 +144,13 @@ CREATE TABLE IF NOT EXISTS admin_users (
     password_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ── Indexes ─────────────────────────────────────────────────────────────────
+-- messages_log had none. The inbox filters by phone and the dashboard filters
+-- by date, so both were sequential scans over a table that only ever grows.
+CREATE INDEX IF NOT EXISTS idx_messages_log_phone_id ON messages_log (phone, id);
+CREATE INDEX IF NOT EXISTS idx_messages_log_sent_at  ON messages_log (sent_at);
+CREATE INDEX IF NOT EXISTS idx_leads_created_at      ON leads (created_at);
+CREATE INDEX IF NOT EXISTS idx_leads_status          ON leads (status);
+CREATE INDEX IF NOT EXISTS idx_callbacks_status      ON callbacks (status);
+CREATE INDEX IF NOT EXISTS idx_campaigns_due         ON campaigns (status, scheduled_at);

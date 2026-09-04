@@ -32,3 +32,6 @@ Thumbs.db
 
 # Local dev build artefact
 _devserver
+
+# Backups of .env, which hold real credentials.
+.env.backup-*

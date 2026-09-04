@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -209,16 +210,50 @@ func AdminRoutes() chi.Router {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Bounded. This used to call GetAllMessages, which has no LIMIT — the
+	// handler returned every row ever written and ignored the limit the client
+	// sent, so the payload grew without bound for the life of the deployment.
 	r.Get("/messages", func(w http.ResponseWriter, r *http.Request) {
-		messages, _ := db.GetAllMessages()
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+		messages, total, err := db.GetMessagesPage(limit, offset)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not read the message log.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": messages, "total": total})
+	})
+
+	// Per-day and per-hour counts for the dashboard charts, aggregated in the
+	// database rather than by shipping the log to the browser.
+	r.Get("/messages/summary", func(w http.ResponseWriter, r *http.Request) {
+		days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+		summary, err := db.GetMessageSummary(days)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not read the conversation summary.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(summary)
+	})
+
+	// ?after_id=N returns only what is newer, so the inbox poll does not refetch
+	// the whole conversation every few seconds.
+	r.Get("/messages/{phone}", func(w http.ResponseWriter, r *http.Request) {
+		phone := chi.URLParam(r, "phone")
+		afterID, _ := strconv.Atoi(r.URL.Query().Get("after_id"))
+
+		messages, err := db.GetMessagesByPhoneAfter(phone, afterID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not read that conversation.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(messages)
 	})
 
-	r.Get("/messages/{phone}", func(w http.ResponseWriter, r *http.Request) {
-		phone := chi.URLParam(r, "phone")
-		messages, _ := db.GetMessagesByPhone(phone)
-		json.NewEncoder(w).Encode(messages)
-	})
 
 	r.Post("/send-message", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
