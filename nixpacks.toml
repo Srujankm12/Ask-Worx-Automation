@@ -1,12 +1,14 @@
+# The admin panel is deployed separately (Vercel, from Ask-Worx-ADmin-panel).
+# This build used to also `npm install && npm run build` the admin-frontend
+# copy that lives in this repo — a second, stale copy of the panel that none of
+# the design work touched. It cost build minutes on every deploy to produce a
+# bundle nobody serves. Dropping it also drops the Node toolchain.
 [phases.setup]
-nixPkgs = ["...", "nodejs"]
+nixPkgs = ["..."]
 
 [phases.build]
 dependsOn = ["setup"]
-cmds = [
-  "cd admin-frontend && npm install && npm run build",
-  "go build -o askworx-bot ."
-]
+cmds = ["go build -o askworx-bot ."]
 
 [start]
 cmd = "./askworx-bot"
