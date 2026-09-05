@@ -101,7 +101,8 @@ func main() {
 		log.Fatalf("Refusing to start: %v", err)
 	}
 	defer db.Pool.Close()
-	db.CreateInternalTables()
+	// CreateInternalTables now runs inside InitDB, ahead of migration.sql,
+	// because the migration alters tables that this call creates.
 
 	if err := EnsureFirstAdmin(); err != nil {
 		log.Fatalf("Refusing to start: %v", err)
