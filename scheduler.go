@@ -21,12 +21,16 @@ func InitScheduler() {
 
 	c := cron.New(cron.WithLocation(loc))
 
-	// Morning Check-in for Internal Team (Nudge at 9 AM IST)
+	// Morning Check-in for Internal Team (Nudge at 9 AM IST).
+	// Only employees who messaged in the last 24 hours: the greeting is not a
+	// template, so Meta rejects it for everyone else.
 	_, err = c.AddFunc("0 9 * * *", func() {
-		emps, err := db.GetAllEmployees()
+		emps, err := db.GetEmployeesInServiceWindow()
 		if err != nil {
+			log.Println("[Scheduler] Error fetching employee greeting recipients:", err)
 			return
 		}
+		log.Printf("[Scheduler] Sending employee greeting to %d employees in the 24h window", len(emps))
 		for _, e := range emps {
 			template := db.GetSetting("greeting_employee")
 			if template == "" {
@@ -38,12 +42,16 @@ func InitScheduler() {
 		}
 	})
 
-	// Good Morning greeting for Users/Customers (Nudge at 9:30 AM IST)
-	_, err = c.AddFunc("30 9 * * *", func() {
-		phones, err := db.GetAllPhoneNumbers()
+	// Good Morning greeting for Users/Customers (Nudge at 8:30 AM IST).
+	// Only contacts who messaged in the last 24 hours: the greeting is not a
+	// template, so Meta rejects it for everyone else.
+	_, err = c.AddFunc("30 8 * * *", func() {
+		phones, err := db.GetPhonesInServiceWindow()
 		if err != nil {
+			log.Println("[Scheduler] Error fetching greeting recipients:", err)
 			return
 		}
+		log.Printf("[Scheduler] Sending morning greeting to %d contacts in the 24h window", len(phones))
 		for _, p := range phones {
 			// Skip if they are an employee
 			isEmp, _ := db.IsEmployee(p)
@@ -122,9 +130,11 @@ func InitScheduler() {
 			return
 		}
 
-		phones, err := db.GetAllPhoneNumbers()
-		if err != nil || len(phones) == 0 {
-			log.Println("[Scheduler] No contacts to broadcast to")
+		// Only contacts inside the 24h window: campaigns are not templates, so
+		// Meta rejects them for everyone else.
+		phones, err := db.GetPhonesInServiceWindow()
+		if err != nil {
+			log.Println("[Scheduler] Error fetching campaign recipients:", err)
 			return
 		}
 
@@ -141,13 +151,18 @@ func InitScheduler() {
 				continue
 			}
 
-			log.Printf("[Scheduler] Broadcasting campaign #%d (%s) to %d contacts", camp.ID, camp.Type, len(phones))
+			log.Printf("[Scheduler] Broadcasting campaign #%d (%s) to %d contacts in the 24h window", camp.ID, camp.Type, len(phones))
 
-			switch strings.ToLower(camp.Type) {
-			case "quiz":
-				broadcastQuiz(camp, phones)
-			case "poster":
-				broadcastPoster(camp, phones)
+			// With nobody in the window the campaign is still marked sent, to
+			// 0. Leaving it due would fire it at whatever minute the next
+			// person happened to message, to that one person.
+			if len(phones) > 0 {
+				switch strings.ToLower(camp.Type) {
+				case "quiz":
+					broadcastQuiz(camp, phones)
+				case "poster":
+					broadcastPoster(camp, phones)
+				}
 			}
 
 			if err := db.MarkCampaignSent(camp.ID, len(phones)); err != nil {

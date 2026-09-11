@@ -129,6 +129,39 @@ func GetAllPhoneNumbers() ([]string, error) {
 	return phones, nil
 }
 
+// GetPhonesInServiceWindow returns opted-in contacts who have messaged the bot
+// in the last 24 hours. WhatsApp only accepts a non-template message inside
+// that window; sending to anyone else is rejected by Meta (error 131047), so
+// the scheduled greeting and campaigns use this list instead of
+// GetAllPhoneNumbers.
+//
+// Phones are compared on their last ten digits, as the attendance query does,
+// because contacts added from the panel may not carry the country code.
+func GetPhonesInServiceWindow() ([]string, error) {
+	rows, err := Pool.Query(context.Background(), `
+		SELECT DISTINCT c.phone
+		FROM contacts c
+		JOIN messages_log m ON RIGHT(m.phone, 10) = RIGHT(c.phone, 10)
+		WHERE c.opt_out = FALSE
+		  AND m.direction = 'incoming'
+		  AND m.sent_at > NOW() - INTERVAL '24 hours'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	phones := []string{}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			log.Printf("[db] %s: skipping unreadable row: %v", "db/messages.go", err)
+			continue
+		}
+		phones = append(phones, p)
+	}
+	return phones, rows.Err()
+}
+
 // ── Aggregates, computed in the database ────────────────────────────────────
 //
 // The dashboard used to pull the message log over the wire and bucket it in the

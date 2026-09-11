@@ -432,6 +432,35 @@ func GetAllEmployees() ([]Employee, error) {
 	return employees, nil
 }
 
+// GetEmployeesInServiceWindow returns employees who have messaged the bot in
+// the last 24 hours — the only ones Meta will deliver the 9 AM greeting to,
+// since it is not a template. See GetPhonesInServiceWindow.
+func GetEmployeesInServiceWindow() ([]Employee, error) {
+	rows, err := Pool.Query(context.Background(), `
+		SELECT e.id, e.name, e.phone, e.role
+		FROM employees e
+		WHERE EXISTS (
+			SELECT 1 FROM messages_log m
+			WHERE RIGHT(m.phone, 10) = RIGHT(e.phone, 10)
+			  AND m.direction = 'incoming'
+			  AND m.sent_at > NOW() - INTERVAL '24 hours')
+		ORDER BY e.name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var employees []Employee
+	for rows.Next() {
+		var e Employee
+		if err := rows.Scan(&e.ID, &e.Name, &e.Phone, &e.Role); err != nil {
+			return nil, err
+		}
+		employees = append(employees, e)
+	}
+	return employees, rows.Err()
+}
+
 func GetAttendancePaginated(limit, offset int, start, end string) ([]AttendanceRecord, error) {
 	query := `
 		SELECT a.id, COALESCE(e.name, 'Unregistered Staff'), a.date, a.check_in, a.check_out, a.work_plan, a.eod_report,
