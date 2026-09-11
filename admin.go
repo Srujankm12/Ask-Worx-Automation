@@ -254,13 +254,31 @@ func AdminRoutes() chi.Router {
 		json.NewEncoder(w).Encode(messages)
 	})
 
-
 	r.Post("/send-message", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Phone   string `json:"phone"`
 			Message string `json:"message"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+			strings.TrimSpace(body.Phone) == "" || strings.TrimSpace(body.Message) == "" {
+			writeJSONError(w, http.StatusBadRequest, "A phone number and a message are both needed.")
+			return
+		}
+
+		// Outside the 24-hour window Meta rejects a free-form message, and
+		// sendTextMessage only logs that. Refusing here means the panel says
+		// it was not sent instead of showing a reply the customer never got.
+		inWindow, err := db.IsInServiceWindow(body.Phone)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not check whether this contact can be messaged.")
+			return
+		}
+		if !inWindow {
+			writeJSONError(w, http.StatusConflict,
+				"This contact has not messaged in the last 24 hours, so WhatsApp will not deliver a free reply. They need to message first.")
+			return
+		}
+
 		sendTextMessage(body.Phone, body.Message)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -308,6 +326,14 @@ func AdminRoutes() chi.Router {
 		if c.Type == "poster" && c.ImageURL == "" {
 			http.Error(w, "image_url is required for posters", http.StatusBadRequest)
 			return
+		}
+		if c.Type == "poster" {
+			if msg := validateCampaignButtons(c.Buttons); msg != "" {
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			}
+		} else {
+			c.Buttons = nil // quiz buttons are always A, B and C
 		}
 		if c.ScheduledAt.IsZero() {
 			http.Error(w, "scheduled_at is required", http.StatusBadRequest)

@@ -62,6 +62,9 @@ type Contact struct {
 	Company  *string   `json:"company"`
 	OptOut   bool      `json:"opt_out"`
 	JoinedAt time.Time `json:"joined_at"`
+	// When they last messaged the bot, or null if they never have. The panel
+	// reads this to show who is inside WhatsApp's 24-hour reply window.
+	LastIncomingAt *time.Time `json:"last_incoming_at"`
 }
 
 func SyncNamesFromLeads() error {
@@ -80,13 +83,21 @@ func GetAllContacts() ([]Contact, error) {
 	SyncNamesFromLeads()
 
 	query := `
-		SELECT c.id, c.phone, c.name, c.company, c.opt_out, c.joined_at
+		SELECT c.id, c.phone, c.name, c.company, c.opt_out, c.joined_at, i.last_in
 		FROM contacts c
 		LEFT JOIN (
 			SELECT phone, MAX(sent_at) as last_msg
 			FROM messages_log
 			GROUP BY phone
 		) m ON c.phone = m.phone
+		-- Last ten digits, matching GetPhonesInServiceWindow, so the panel and
+		-- the sender agree on who is inside the window.
+		LEFT JOIN (
+			SELECT RIGHT(phone, 10) AS phone10, MAX(sent_at) AS last_in
+			FROM messages_log
+			WHERE direction = 'incoming'
+			GROUP BY 1
+		) i ON RIGHT(c.phone, 10) = i.phone10
 		ORDER BY COALESCE(m.last_msg, c.joined_at) DESC
 	`
 	rows, err := Pool.Query(context.Background(), query)
@@ -98,7 +109,7 @@ func GetAllContacts() ([]Contact, error) {
 	contacts := []Contact{}
 	for rows.Next() {
 		var c Contact
-		err := rows.Scan(&c.ID, &c.Phone, &c.Name, &c.Company, &c.OptOut, &c.JoinedAt)
+		err := rows.Scan(&c.ID, &c.Phone, &c.Name, &c.Company, &c.OptOut, &c.JoinedAt, &c.LastIncomingAt)
 		if err != nil {
 			log.Printf("[db] %s: skipping unreadable row: %v", "db/contacts.go", err)
 			continue

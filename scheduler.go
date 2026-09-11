@@ -221,6 +221,50 @@ func broadcastQuiz(camp db.Campaign, phones []string) {
 	}
 }
 
+// posterButtonActions are the button IDs a poster may carry. Each is handled
+// by handleMessage whatever state the conversation is in, which is what a
+// button on a broadcast needs: the person tapping it may be anywhere in a
+// flow. The panel offers the same list.
+var posterButtonActions = map[string]bool{
+	"main_menu":      true, // opening message
+	"talk_to_expert": true, // support categories
+	"our_solutions":  true, // solutions menu
+	"about_askworx":  true, // about the company
+	"flow_quotation": true, // quotation lead form
+	"flow_callback":  true, // callback lead form
+	"flow_service":   true, // service request lead form
+}
+
+// validateCampaignButtons returns a reason the buttons cannot be sent, or ""
+// if they can. None at all is allowed: the poster then uses the defaults.
+func validateCampaignButtons(buttons []db.CampaignButton) string {
+	if len(buttons) > 3 {
+		return "a poster can have at most 3 buttons"
+	}
+	seenIDs := map[string]bool{}
+	seenTitles := map[string]bool{}
+	for i := range buttons {
+		b := &buttons[i]
+		b.Title = strings.TrimSpace(b.Title)
+		if b.Title == "" {
+			return "every button needs text"
+		}
+		// WhatsApp's limit. sendImageWithButtons would otherwise cut it
+		// short with an ellipsis the operator never saw.
+		if len([]rune(b.Title)) > 20 {
+			return fmt.Sprintf("button text %q is longer than 20 characters", b.Title)
+		}
+		if !posterButtonActions[b.ID] {
+			return fmt.Sprintf("button %q has an action the bot does not handle", b.Title)
+		}
+		if seenIDs[b.ID] || seenTitles[b.Title] {
+			return "two buttons cannot do the same thing or have the same text"
+		}
+		seenIDs[b.ID], seenTitles[b.Title] = true, true
+	}
+	return ""
+}
+
 func broadcastPoster(camp db.Campaign, phones []string) {
 	publicURL := os.Getenv("PUBLIC_URL")
 	actualImageURL := camp.ImageURL
@@ -242,9 +286,16 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 		os.Getenv("COMPANY_NAME"), camp.Caption,
 	)
 
+	// Posters saved before buttons were editable keep the original pair.
 	buttons := []Button{
 		{ID: "expert", Title: db.ButtonLabel("expert", "Talk to Expert 📞")},
 		{ID: "menu", Title: db.ButtonLabel("menu", "Main Menu 🏠")},
+	}
+	if len(camp.Buttons) > 0 {
+		buttons = make([]Button, 0, len(camp.Buttons))
+		for _, b := range camp.Buttons {
+			buttons = append(buttons, Button{ID: b.ID, Title: b.Title})
+		}
 	}
 
 	for _, phone := range phones {

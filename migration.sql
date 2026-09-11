@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS campaigns (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- A poster's reply buttons, as [{"id": ..., "title": ...}]. NULL means the
+-- poster predates custom buttons and goes out with the original pair.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS buttons JSONB;
+
 CREATE TABLE IF NOT EXISTS quizzes (
     id SERIAL PRIMARY KEY,
     campaign_id INT REFERENCES campaigns(id),

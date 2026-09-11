@@ -162,6 +162,19 @@ func GetPhonesInServiceWindow() ([]string, error) {
 	return phones, rows.Err()
 }
 
+// IsInServiceWindow reports whether phone has messaged the bot in the last 24
+// hours, which is when a free-form reply can still be delivered.
+func IsInServiceWindow(phone string) (bool, error) {
+	var in bool
+	err := Pool.QueryRow(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1 FROM messages_log
+			WHERE RIGHT(phone, 10) = RIGHT($1, 10)
+			  AND direction = 'incoming'
+			  AND sent_at > NOW() - INTERVAL '24 hours')`, phone).Scan(&in)
+	return in, err
+}
+
 // ── Aggregates, computed in the database ────────────────────────────────────
 //
 // The dashboard used to pull the message log over the wire and bucket it in the
