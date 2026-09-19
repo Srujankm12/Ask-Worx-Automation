@@ -18,7 +18,9 @@ type Campaign struct {
 	Explanation   string    `json:"explanation"`
 	YouTubeLink   string    `json:"youtube_link"`
 	ImageURL      string    `json:"image_url"`
-	Caption       string    `json:"caption"`
+	Caption       string    `json:"caption"` // legacy single-field posters, pre-title/description
+	Title         string    `json:"title"`
+	Description   string    `json:"description"`
 	ScheduledAt   time.Time `json:"scheduled_at"`
 	Status        string    `json:"status"` // scheduled | sending | sent | cancelled
 	TotalSent     int       `json:"total_sent"`
@@ -47,14 +49,14 @@ type CampaignAnalytics struct {
 // CreateCampaign inserts a new campaign and returns its ID.
 func CreateCampaign(c Campaign) (int, error) {
 	query := `INSERT INTO campaigns
-		(type, question, option_a, option_b, option_c, correct_answer, explanation, youtube_link, image_url, caption, scheduled_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		(type, question, option_a, option_b, option_c, correct_answer, explanation, youtube_link, image_url, caption, title, description, scheduled_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING id`
 	var id int
 	err := Pool.QueryRow(context.Background(), query,
 		c.Type, c.Question, c.OptionA, c.OptionB, c.OptionC,
 		c.CorrectAnswer, c.Explanation, c.YouTubeLink,
-		c.ImageURL, c.Caption, c.ScheduledAt,
+		c.ImageURL, c.Caption, c.Title, c.Description, c.ScheduledAt,
 	).Scan(&id)
 	return id, err
 }
@@ -63,7 +65,7 @@ func CreateCampaign(c Campaign) (int, error) {
 func GetAllCampaigns() ([]Campaign, error) {
 	rows, err := Pool.Query(context.Background(),
 		`SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
-		        youtube_link, image_url, caption, scheduled_at, status, total_sent, created_at
+		        youtube_link, image_url, caption, title, description, scheduled_at, status, total_sent, created_at
 		 FROM campaigns ORDER BY scheduled_at DESC`)
 	if err != nil {
 		return nil, err
@@ -75,6 +77,7 @@ func GetAllCampaigns() ([]Campaign, error) {
 		var c Campaign
 		err := rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
+			&c.Title, &c.Description,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
 			// Silently dropping the row hid a whole page of campaigns behind a
@@ -92,7 +95,7 @@ func GetAllCampaigns() ([]Campaign, error) {
 func GetDueCampaigns() ([]Campaign, error) {
 	rows, err := Pool.Query(context.Background(),
 		`SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
-		        youtube_link, image_url, caption, scheduled_at, status, total_sent, created_at
+		        youtube_link, image_url, caption, title, description, scheduled_at, status, total_sent, created_at
 		 FROM campaigns WHERE status = 'scheduled' AND scheduled_at <= NOW()`)
 	if err != nil {
 		return nil, err
@@ -104,6 +107,7 @@ func GetDueCampaigns() ([]Campaign, error) {
 		var c Campaign
 		rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
+			&c.Title, &c.Description,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		campaigns = append(campaigns, c)
 	}
@@ -199,7 +203,7 @@ func GetCampaignAnalytics(campaignID int) (CampaignAnalytics, error) {
 
 func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, error) {
 	query := `SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
-		        youtube_link, image_url, caption, scheduled_at, status, total_sent, created_at
+		        youtube_link, image_url, caption, title, description, scheduled_at, status, total_sent, created_at
 		 FROM campaigns WHERE 1=1`
 	args := []interface{}{}
 	argID := 1
@@ -229,6 +233,7 @@ func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, er
 		var c Campaign
 		err := rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
+			&c.Title, &c.Description,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
 			// Silently dropping the row hid a whole page of campaigns behind a

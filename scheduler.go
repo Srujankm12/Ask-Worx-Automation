@@ -217,6 +217,13 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 		log.Printf("[Scheduler] Local image detected. Rewriting to public: %s", actualImageURL)
 	}
 
+	// Posters created before the title/description split only have Caption;
+	// keep sending those exactly as before rather than a blank body.
+	body := camp.Caption
+	if camp.Title != "" || camp.Description != "" {
+		body = fmt.Sprintf("*%s*\n\n%s", camp.Title, camp.Description)
+	}
+
 	premiumCaption := fmt.Sprintf(
 		"📢 *%s Industrial Update* 📢\n"+
 			"──────────────────⬡\n\n"+
@@ -224,7 +231,7 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 			"──────────────────⬡\n"+
 			"🌐 *Visit us:* www.askworx.in\n"+
 			"📧 *Support:* contact@askworx.in",
-		os.Getenv("COMPANY_NAME"), camp.Caption,
+		os.Getenv("COMPANY_NAME"), body,
 	)
 
 	buttons := []Button{

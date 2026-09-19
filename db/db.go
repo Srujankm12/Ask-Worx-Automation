@@ -50,6 +50,13 @@ func InitDB() error {
 	// Hot-fix: Ensure campaign_id exists in quizzes
 	Pool.Exec(context.Background(), `ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS campaign_id INTEGER REFERENCES campaigns(id)`)
 
+	// Hot-fix: posters now carry a title and description instead of a single
+	// caption. caption is kept so campaigns scheduled before this change still
+	// read and send correctly. DEFAULT '' (not NULL) so existing rows scan
+	// cleanly into Go's plain string fields, the same way caption always has.
+	Pool.Exec(context.Background(), `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS title TEXT DEFAULT ''`)
+	Pool.Exec(context.Background(), `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`)
+
 	// Hot-fix: Create customer_queries table
 	Pool.Exec(context.Background(), `
 		CREATE TABLE IF NOT EXISTS customer_queries (

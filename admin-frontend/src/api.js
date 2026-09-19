@@ -25,7 +25,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export const login = (password) => authApi.post('/api/login', { password });
+export const login = (email, password) => authApi.post('/api/login', { email, password });
 
 export const getStats = () => api.get('/stats');
 export const getLeads = (params) => api.get('/leads', { params });

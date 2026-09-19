@@ -165,19 +165,22 @@ func AdminRoutes() chi.Router {
 
 	r.Post("/contacts", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Phone string `json:"phone"`
-			Name  string `json:"name"`
+			Phone   string `json:"phone"`
+			Name    string `json:"name"`
+			Company string `json:"company"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := db.UpsertContact(body.Phone, body.Name); err != nil {
+		if err := db.UpsertContact(body.Phone, body.Name, body.Company); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 	})
+
+	r.Post("/contacts/import", ImportContactsHandler)
 
 	r.Delete("/contacts/{id}", func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
@@ -254,7 +257,6 @@ func AdminRoutes() chi.Router {
 		json.NewEncoder(w).Encode(messages)
 	})
 
-
 	r.Post("/send-message", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Phone   string `json:"phone"`
@@ -307,6 +309,10 @@ func AdminRoutes() chi.Router {
 		}
 		if c.Type == "poster" && c.ImageURL == "" {
 			http.Error(w, "image_url is required for posters", http.StatusBadRequest)
+			return
+		}
+		if c.Type == "poster" && (strings.TrimSpace(c.Title) == "" || strings.TrimSpace(c.Description) == "") {
+			http.Error(w, "title and description are required for posters", http.StatusBadRequest)
 			return
 		}
 		if c.ScheduledAt.IsZero() {

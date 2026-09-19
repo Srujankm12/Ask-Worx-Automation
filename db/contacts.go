@@ -13,10 +13,10 @@ func SaveContact(phone string, name string) error {
 	return err
 }
 
-func UpsertContact(phone, name string) error {
+func UpsertContact(phone, name, company string) error {
 	_, err := Pool.Exec(context.Background(),
-		"INSERT INTO contacts (phone, name) VALUES ($1, $2) ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name",
-		phone, name)
+		"INSERT INTO contacts (phone, name, company) VALUES ($1, $2, $3) ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company",
+		phone, name, company)
 	return err
 }
 
@@ -73,6 +73,34 @@ func SyncNamesFromLeads() error {
 		AND (contacts.name IS NULL OR contacts.name = '')
 	`)
 	return err
+}
+
+func GetAllPhones() (map[string]bool, error) {
+	rows, err := Pool.Query(context.Background(), "SELECT phone FROM contacts")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	phones := make(map[string]bool)
+	for rows.Next() {
+		var phone string
+		if err := rows.Scan(&phone); err != nil {
+			continue
+		}
+		phones[phone] = true
+	}
+	return phones, nil
+}
+
+func InsertContactIfAbsent(phone, name, company string) (bool, error) {
+	tag, err := Pool.Exec(context.Background(),
+		"INSERT INTO contacts (phone, name, company) VALUES ($1, $2, $3) ON CONFLICT (phone) DO NOTHING",
+		phone, name, company)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 func GetAllContacts() ([]Contact, error) {
