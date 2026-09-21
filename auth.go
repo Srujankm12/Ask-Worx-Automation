@@ -186,14 +186,15 @@ func AuthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AuthMiddleware guards every /api route except sign-in and the public uploads
-// that Meta has to be able to fetch.
+// AuthMiddleware guards every /api route except sign-in and the public
+// uploads and campaign images that Meta has to be able to fetch.
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if path == "/api/login" || path == "/login" ||
 			strings.HasPrefix(path, "/uploads") ||
-			strings.HasPrefix(path, "/api/uploads") {
+			strings.HasPrefix(path, "/api/uploads") ||
+			(strings.HasPrefix(path, "/api/campaigns/") && strings.HasSuffix(path, "/image")) {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS campaigns (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Posters can carry their own image as binary data instead of a URL, so a
+-- broadcast image never depends on an external host or on this server's own
+-- disk staying around. image_data is capped at 2 MB by the upload handler,
+-- not here — Postgres would happily store more.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_name VARCHAR(255) DEFAULT '';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_type VARCHAR(50) DEFAULT '';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_size INTEGER DEFAULT 0;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_data BYTEA;
+
 CREATE TABLE IF NOT EXISTS quizzes (
     id SERIAL PRIMARY KEY,
     campaign_id INT REFERENCES campaigns(id),

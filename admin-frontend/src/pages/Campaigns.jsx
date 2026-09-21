@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Calendar, Trash2, BarChart2, CheckCircle, Clock,
-  XCircle, Radio, Image, Brain, ChevronDown, ChevronUp, Loader2
+  XCircle, Radio, Image, Brain, ChevronDown, ChevronUp, Loader2, ImageOff
 } from 'lucide-react';
 import {
-  getCampaigns, createCampaign, deleteCampaign, getCampaignAnalytics, uploadImage
+  getCampaigns, createCampaign, deleteCampaign, getCampaignAnalytics
 } from '../api';
+
+// Mirrors the backend's own limits (parseCampaignMultipart in admin.go) so the
+// user sees the same rule before the request ever leaves the browser.
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const IMAGE_SIZE_ERROR = 'Image size must be less than or equal to 2 MB.';
+const IMAGE_TYPE_ERROR = 'Only JPG, JPEG, PNG and WEBP images are allowed.';
 
 const STATUS_STYLES = {
   scheduled: 'bg-blue-50 text-blue-700 border border-blue-200',
@@ -24,10 +31,11 @@ const EMPTY_QUIZ = {
   correct_answer: 'A', explanation: '', youtube_link: '', scheduled_at: '',
 };
 const EMPTY_POSTER = {
-  type: 'poster', image_url: '', caption: '', scheduled_at: '',
+  type: 'poster', image_url: '', caption: '', title: '', description: '', scheduled_at: '',
 };
 
 import Modal from '../components/Modal';
+import ImagePreviewModal from '../components/ImagePreviewModal';
 
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState([]);
@@ -42,11 +50,32 @@ export default function Campaigns() {
   const [uploadSource, setUploadSource] = useState('url'); // 'url' or 'local'
   const [uploading, setUploading] = useState(false);
   const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
+  const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [brokenImageIds, setBrokenImageIds] = useState(() => new Set());
 
   // Smarter base URL: use current origin if deployed
   const API_BASE = import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.includes('localhost')
     ? import.meta.env.VITE_API_URL
     : window.location.origin;
+
+  // Campaign image_url is stored as the path the backend serves it at
+  // (e.g. "/api/campaigns/3/image") whenever PUBLIC_URL isn't configured, so
+  // it needs the backend origin prefixed before it's usable in an <img src>.
+  // A pasted remote URL, or one already made absolute via PUBLIC_URL, is
+  // used as-is.
+  const resolveImageUrl = (url) => {
+    if (!url) return null;
+    return url.startsWith('/') ? `${API_BASE}${url}` : url;
+  };
+
+  // Revoke the local preview object URL whenever it's replaced or the form
+  // unmounts, so we don't leak blob URLs.
+  useEffect(() => {
+    return () => {
+      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    };
+  }, [localPreviewUrl]);
 
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -73,6 +102,8 @@ export default function Campaigns() {
     setFormType(t);
     setForm(t === 'quiz' ? { ...EMPTY_QUIZ } : { ...EMPTY_POSTER });
     setErrors({});
+    if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    setLocalPreviewUrl(null);
   };
 
   const validate = () => {
@@ -89,11 +120,20 @@ export default function Campaigns() {
     }
 
     if (formType === 'poster') {
+      if (!form.title || !form.title.trim()) e.title = 'Title is required';
+      if (!form.description || !form.description.trim()) e.description = 'Description is required';
+
       if (uploadSource === 'url' && !form.image_url.trim()) {
         e.image_url = 'Image URL required';
       }
-      if (uploadSource === 'local' && !form.localFile) {
-        e.local_file = 'Image file required';
+      if (uploadSource === 'local') {
+        if (!form.localFile) {
+          e.local_file = 'Image file required';
+        } else if (!ALLOWED_IMAGE_TYPES.includes(form.localFile.type)) {
+          e.local_file = IMAGE_TYPE_ERROR;
+        } else if (form.localFile.size > MAX_IMAGE_BYTES) {
+          e.local_file = IMAGE_SIZE_ERROR;
+        }
       }
     }
 
@@ -107,29 +147,27 @@ export default function Campaigns() {
     setSubmitting(true);
 
     try {
-      let finalForm = { ...form, type: formType };
-
-      // Handle Local File Upload
-      if (formType === 'poster' && uploadSource === 'local') {
-        if (!form.localFile) {
-          setModal({
-            open: true,
-            title: 'File Required',
-            message: 'Please select an image to upload before submitting.',
-            type: 'error'
-          });
-          setSubmitting(false);
-          return;
-        }
-        setUploading(true);
-        const { data: uploadData } = await uploadImage(form.localFile);
-        finalForm.image_url = `${API_BASE}${uploadData.url}`;
-        setUploading(false);
-      }
-
       // Convert datetime-local (YYYY-MM-DDTHH:MM) to full ISO string for Go's time.Time
       const scheduledISO = new Date(form.scheduled_at).toISOString();
-      await createCampaign({ ...finalForm, scheduled_at: scheduledISO });
+
+      if (formType === 'poster' && uploadSource === 'local') {
+        // Send the image straight to POST /campaigns as multipart/form-data —
+        // the backend stores it in campaigns.image_data (Postgres BYTEA) and
+        // points image_url at the endpoint that serves it back. There is no
+        // separate "upload" step; a two-step upload-then-JSON flow was how
+        // the poster image ended up saved to local disk under the frontend's
+        // own origin instead of the database, which is why it never loaded.
+        const fd = new FormData();
+        fd.append('type', formType);
+        fd.append('title', form.title || '');
+        fd.append('description', form.description || '');
+        fd.append('caption', form.caption || '');
+        fd.append('scheduled_at', scheduledISO);
+        fd.append('image', form.localFile);
+        await createCampaign(fd);
+      } else {
+        await createCampaign({ ...form, type: formType, scheduled_at: scheduledISO });
+      }
 
       setModal({
         open: true,
@@ -139,12 +177,14 @@ export default function Campaigns() {
       });
       setShowForm(false);
       setForm(EMPTY_QUIZ);
+      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+      setLocalPreviewUrl(null);
       load();
     } catch (e) {
       setModal({
         open: true,
         title: 'Creation Failed',
-        message: e?.response?.data || 'Failed to create campaign. Please try again.',
+        message: e?.response?.data?.error || 'Failed to create campaign. Please try again.',
         type: 'error'
       });
     } finally {
@@ -212,6 +252,12 @@ export default function Campaigns() {
         title={modal.title}
         message={modal.message}
         type={modal.type}
+      />
+      <ImagePreviewModal
+        isOpen={!!selectedImage}
+        onClose={() => setSelectedImage(null)}
+        src={selectedImage ? resolveImageUrl(selectedImage.image_url) : null}
+        alt={selectedImage?.title || 'Poster'}
       />
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
@@ -290,6 +336,9 @@ export default function Campaigns() {
                   ))}
                 </div>
 
+                {field('title', 'Title', { placeholder: 'New service launch' })}
+                {field('description', 'Description', { textarea: true, placeholder: 'Describe what this poster is announcing...' })}
+
                 {uploadSource === 'url' ? (
                   field('image_url', 'Image URL', { placeholder: 'https://images.unsplash.com/...' })
                 ) : (
@@ -297,11 +346,45 @@ export default function Campaigns() {
                     <label className="block text-xs font-semibold text-slate-500 mb-1">Select Image File</label>
                     <input
                       type="file"
-                      accept="image/*"
-                      onChange={(e) => setForm(f => ({ ...f, localFile: e.target.files[0] }))}
-                      className="w-full border border-dashed border-slate-300 rounded-xl p-4 bg-slate-50 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+                        setLocalPreviewUrl(null);
+                        setErrors(prev => ({ ...prev, local_file: undefined }));
+
+                        if (!file) {
+                          setForm(f => ({ ...f, localFile: null }));
+                          return;
+                        }
+                        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+                          setErrors(prev => ({ ...prev, local_file: IMAGE_TYPE_ERROR }));
+                          setForm(f => ({ ...f, localFile: null }));
+                          e.target.value = '';
+                          return;
+                        }
+                        if (file.size > MAX_IMAGE_BYTES) {
+                          setErrors(prev => ({ ...prev, local_file: IMAGE_SIZE_ERROR }));
+                          setForm(f => ({ ...f, localFile: null }));
+                          e.target.value = '';
+                          return;
+                        }
+                        setForm(f => ({ ...f, localFile: file }));
+                        setLocalPreviewUrl(URL.createObjectURL(file));
+                      }}
+                      className={`w-full border border-dashed rounded-xl p-4 bg-slate-50 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 ${errors.local_file ? 'border-red-400' : 'border-slate-300'}`}
                     />
-                    {form.localFile && <p className="mt-2 text-xs text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> {form.localFile.name} selected</p>}
+                    {errors.local_file && <p className="mt-2 text-xs text-red-500 font-semibold">{errors.local_file}</p>}
+                    {form.localFile && !errors.local_file && (
+                      <p className="mt-2 text-xs text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> {form.localFile.name} selected</p>
+                    )}
+                    {localPreviewUrl && (
+                      <img
+                        src={localPreviewUrl}
+                        alt="Selected poster preview"
+                        className="mt-3 max-h-48 rounded-xl border border-slate-200 object-contain"
+                      />
+                    )}
                   </div>
                 )}
                 {field('caption', 'Caption (optional)', { textarea: true, placeholder: 'Add a message to accompany the image...' })}
@@ -362,12 +445,33 @@ export default function Campaigns() {
             return (
               <div key={camp.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="flex items-start gap-4 p-5">
-                  {/* Type Icon */}
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${camp.type === 'quiz' ? 'bg-indigo-100' : 'bg-amber-100'}`}>
-                    {camp.type === 'quiz'
-                      ? <Brain className="w-5 h-5 text-indigo-600" />
-                      : <Image className="w-5 h-5 text-amber-600" />}
-                  </div>
+                  {/* Type Icon / Poster Thumbnail */}
+                  {camp.type === 'poster' && camp.image_url && !brokenImageIds.has(camp.id) ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedImage(camp)}
+                      className="w-10 h-10 rounded-xl overflow-hidden shrink-0 border border-slate-200 hover:ring-2 hover:ring-indigo-400 transition-all"
+                      title="View full image"
+                    >
+                      <img
+                        src={resolveImageUrl(camp.image_url)}
+                        alt={camp.title || 'Poster'}
+                        className="w-full h-full object-cover"
+                        onError={() => {
+                          console.error(`[Campaigns] failed to load image for campaign ${camp.id}: ${resolveImageUrl(camp.image_url)}`);
+                          setBrokenImageIds(prev => new Set(prev).add(camp.id));
+                        }}
+                      />
+                    </button>
+                  ) : (
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${camp.type === 'quiz' ? 'bg-indigo-100' : 'bg-amber-100'}`}>
+                      {camp.type === 'quiz'
+                        ? <Brain className="w-5 h-5 text-indigo-600" />
+                        : camp.type === 'poster' && camp.image_url
+                          ? <ImageOff className="w-5 h-5 text-amber-600" />
+                          : <Image className="w-5 h-5 text-amber-600" />}
+                    </div>
+                  )}
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -378,7 +482,7 @@ export default function Campaigns() {
                       <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">{camp.type}</span>
                     </div>
                     <p className="font-semibold text-slate-800 text-sm truncate">
-                      {camp.type === 'quiz' ? camp.question : (camp.caption || camp.image_url)}
+                      {camp.type === 'quiz' ? camp.question : (camp.title || camp.caption || camp.image_url)}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
                       <Calendar className="w-3 h-3 inline mr-1" />

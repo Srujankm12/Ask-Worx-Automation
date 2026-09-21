@@ -4,6 +4,7 @@ import { login as loginApi } from '../api';
 import { Cpu, Lock, ShieldCheck, ArrowRight } from 'lucide-react';
 
 const Login = () => {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,9 +14,9 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    
+
     try {
-      const resp = await loginApi(password);
+      const resp = await loginApi(email, password);
       localStorage.setItem('askworx_token', resp.data.token);
       navigate('/');
     } catch (err) {
@@ -50,6 +51,19 @@ const Login = () => {
           
           <form onSubmit={handleLogin} className="space-y-8 relative z-10">
             <div className="space-y-6">
+               <div className="relative group">
+                  <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors">
+                     <Lock className="w-5 h-5" />
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    className="w-full bg-white/5 border border-white/10 rounded-[20px] pl-14 pr-6 py-5 text-white font-bold outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all placeholder:text-slate-600"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+               </div>
                <div className="relative group">
                   <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors">
                      <Lock className="w-5 h-5" />

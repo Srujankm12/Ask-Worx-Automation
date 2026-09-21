@@ -17,6 +17,104 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Maximum size for a broadcast poster image stored in the database, and the
+// only formats accepted. Enforced here — never just on the frontend, since a
+// request can always skip the browser entirely.
+const maxCampaignImageBytes = 2 << 20 // 2 MB
+
+var allowedCampaignImageTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+}
+
+// parseCampaignMultipart reads a multipart POST /campaigns request into c and
+// returns the uploaded image's bytes, if any. On an invalid request it writes
+// the error response itself and returns ok=false.
+func parseCampaignMultipart(w http.ResponseWriter, r *http.Request, c *db.Campaign) (imageData []byte, ok bool) {
+	// A little over the image cap to leave room for the rest of the form; the
+	// image itself is still checked against the real 2 MB limit below.
+	const maxRequest = maxCampaignImageBytes + (1 << 20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequest)
+	if err := r.ParseMultipartForm(maxRequest); err != nil {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "Image size must be less than or equal to 2 MB.")
+		return nil, false
+	}
+
+	c.Type = r.FormValue("type")
+	c.Question = r.FormValue("question")
+	c.OptionA = r.FormValue("option_a")
+	c.OptionB = r.FormValue("option_b")
+	c.OptionC = r.FormValue("option_c")
+	c.CorrectAnswer = r.FormValue("correct_answer")
+	c.Explanation = r.FormValue("explanation")
+	c.YouTubeLink = r.FormValue("youtube_link")
+	c.ImageURL = r.FormValue("image_url")
+	c.Caption = r.FormValue("caption")
+	c.Title = r.FormValue("title")
+	c.Description = r.FormValue("description")
+
+	if scheduledAt := r.FormValue("scheduled_at"); scheduledAt != "" {
+		t, err := time.Parse(time.RFC3339, scheduledAt)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "scheduled_at must be a valid date and time.")
+			return nil, false
+		}
+		c.ScheduledAt = t
+	}
+
+	file, handler, err := r.FormFile("image")
+	if err == http.ErrMissingFile {
+		return nil, true
+	}
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Could not read the uploaded image.")
+		return nil, false
+	}
+	defer file.Close()
+
+	if handler.Size > maxCampaignImageBytes {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "Image size must be less than or equal to 2 MB.")
+		return nil, false
+	}
+
+	// The browser-supplied filename and Content-Type are never trusted — only
+	// what the bytes themselves sniff as. A renamed .exe would otherwise pass
+	// a naive extension check.
+	head := make([]byte, 512)
+	n, _ := file.Read(head)
+	sniffed := http.DetectContentType(head[:n])
+	if !allowedCampaignImageTypes[sniffed] {
+		writeJSONError(w, http.StatusUnsupportedMediaType, "Only JPG, JPEG, PNG and WEBP images are allowed.")
+		return nil, false
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Could not read that image.")
+		return nil, false
+	}
+
+	// Read one byte past the cap so an oversized file is rejected outright
+	// instead of silently truncated to 2 MB.
+	data, err := io.ReadAll(io.LimitReader(file, maxCampaignImageBytes+1))
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Could not read that image.")
+		return nil, false
+	}
+	if len(data) > maxCampaignImageBytes {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "Image size must be less than or equal to 2 MB.")
+		return nil, false
+	}
+	if len(data) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "That image file is empty.")
+		return nil, false
+	}
+
+	c.ImageName = strings.ReplaceAll(filepath.Base(handler.Filename), " ", "_")
+	c.ImageType = sniffed
+	c.ImageSize = int64(len(data))
+	return data, true
+}
+
 func AdminRoutes() chi.Router {
 	r := chi.NewRouter()
 
@@ -283,48 +381,70 @@ func AdminRoutes() chi.Router {
 
 	r.Post("/campaigns", func(w http.ResponseWriter, r *http.Request) {
 		var c db.Campaign
-		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
+		var imageData []byte
+
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			data, ok := parseCampaignMultipart(w, r, &c)
+			if !ok {
+				return
+			}
+			imageData = data
+		} else if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
+
 		// Validation
 		if c.Type != "quiz" && c.Type != "poster" {
-			http.Error(w, "type must be 'quiz' or 'poster'", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "type must be 'quiz' or 'poster'")
 			return
 		}
 		if c.Type == "quiz" {
 			if c.Question == "" || c.OptionA == "" || c.OptionB == "" || c.OptionC == "" || c.Explanation == "" {
-				http.Error(w, "all quiz fields are required", http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, "all quiz fields are required")
 				return
 			}
 			c.CorrectAnswer = strings.ToUpper(c.CorrectAnswer)
 			if c.CorrectAnswer != "A" && c.CorrectAnswer != "B" && c.CorrectAnswer != "C" {
-				http.Error(w, "correct_answer must be A, B, or C", http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, "correct_answer must be A, B, or C")
 				return
 			}
 			if len([]rune(c.Explanation)) > 300 {
-				http.Error(w, "explanation must not exceed 300 characters", http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, "explanation must not exceed 300 characters")
 				return
 			}
 		}
-		if c.Type == "poster" && c.ImageURL == "" {
-			http.Error(w, "image_url is required for posters", http.StatusBadRequest)
+		if c.Type == "poster" && c.ImageURL == "" && len(imageData) == 0 {
+			writeJSONError(w, http.StatusBadRequest, "image_url or an uploaded image is required for posters")
 			return
 		}
 		if c.Type == "poster" && (strings.TrimSpace(c.Title) == "" || strings.TrimSpace(c.Description) == "") {
-			http.Error(w, "title and description are required for posters", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "title and description are required for posters")
 			return
 		}
 		if c.ScheduledAt.IsZero() {
-			http.Error(w, "scheduled_at is required", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "scheduled_at is required")
 			return
 		}
 
-		id, err := db.CreateCampaign(c)
+		id, err := db.CreateCampaign(c, imageData)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("[Campaigns] could not create campaign: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "Could not save that broadcast. Please try again.")
 			return
 		}
+
+		// The image lives in the database, not at c.ImageURL — point the row at
+		// the endpoint that serves it back, now that its id exists, so the
+		// scheduler and the panel can both load it exactly like a pasted link.
+		if len(imageData) > 0 {
+			publicURL := strings.TrimRight(os.Getenv("PUBLIC_URL"), "/")
+			imageURL := fmt.Sprintf("%s/api/campaigns/%d/image", publicURL, id)
+			if err := db.SetCampaignImageURL(id, imageURL); err != nil {
+				log.Printf("[Campaigns] could not set image_url for campaign %d: %v", id, err)
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]int{"id": id})
 	})
@@ -338,6 +458,26 @@ func AdminRoutes() chi.Router {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+	})
+
+	// Serves a poster's image straight out of the database. Public (see
+	// AuthMiddleware) so both the panel's <img> tags and Meta's own fetch of
+	// the WhatsApp message can load it without a session token.
+	r.Get("/campaigns/{id}/image", func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		var id int
+		fmt.Sscanf(idStr, "%d", &id)
+
+		data, contentType, err := db.GetCampaignImage(id)
+		if err != nil || len(data) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+		w.Write(data)
 	})
 
 	r.Get("/campaigns/{id}/analytics", func(w http.ResponseWriter, r *http.Request) {
