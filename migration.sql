@@ -75,6 +75,10 @@ ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_type VARCHAR(50) DEFAULT ''
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_size INTEGER DEFAULT 0;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_data BYTEA;
 
+-- A poster's reply buttons, as [{"id": ..., "title": ...}]. NULL means the
+-- poster predates custom buttons and goes out with the original pair.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS buttons JSONB;
+
 CREATE TABLE IF NOT EXISTS quizzes (
     id SERIAL PRIMARY KEY,
     campaign_id INT REFERENCES campaigns(id),

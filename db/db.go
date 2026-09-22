@@ -36,6 +36,17 @@ func InitDB() error {
 		return fmt.Errorf("could not reach the database: %w", err)
 	}
 
+	// The internal tables (attendance, reminders, leave_requests, employees,
+	// settings) must exist before the migration runs. migration.sql converts
+	// their timestamp columns to TIMESTAMPTZ, and ALTER TABLE against a table
+	// that does not exist yet aborts the whole script. On an existing database
+	// the ordering never mattered because the tables were already there; on a
+	// fresh one the first deploy died with
+	//   migration failed: relation "attendance" does not exist
+	// These creates are all IF NOT EXISTS and reference nothing from
+	// migration.sql, so running them first is safe in both directions.
+	CreateInternalTables()
+
 	// Run migration
 	// A failed migration used to print "Migration warning" and carry on, which
 	// left the service running against a schema that did not match the code.

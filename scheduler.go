@@ -21,12 +21,16 @@ func InitScheduler() {
 
 	c := cron.New(cron.WithLocation(loc))
 
-	// Morning Check-in for Internal Team (Nudge at 9 AM IST)
+	// Morning Check-in for Internal Team (Nudge at 9 AM IST).
+	// Only employees who messaged in the last 24 hours: the greeting is not a
+	// template, so Meta rejects it for everyone else.
 	_, err = c.AddFunc("0 9 * * *", func() {
-		emps, err := db.GetAllEmployees()
+		emps, err := db.GetEmployeesInServiceWindow()
 		if err != nil {
+			log.Println("[Scheduler] Error fetching employee greeting recipients:", err)
 			return
 		}
+		log.Printf("[Scheduler] Sending employee greeting to %d employees in the 24h window", len(emps))
 		for _, e := range emps {
 			template := db.GetSetting("greeting_employee")
 			if template == "" {
@@ -38,12 +42,16 @@ func InitScheduler() {
 		}
 	})
 
-	// Good Morning greeting for Users/Customers (Nudge at 9:30 AM IST)
-	_, err = c.AddFunc("30 9 * * *", func() {
-		phones, err := db.GetAllPhoneNumbers()
+	// Good Morning greeting for Users/Customers (Nudge at 8:30 AM IST).
+	// Only contacts who messaged in the last 24 hours: the greeting is not a
+	// template, so Meta rejects it for everyone else.
+	_, err = c.AddFunc("30 8 * * *", func() {
+		phones, err := db.GetPhonesInServiceWindow()
 		if err != nil {
+			log.Println("[Scheduler] Error fetching greeting recipients:", err)
 			return
 		}
+		log.Printf("[Scheduler] Sending morning greeting to %d contacts in the 24h window", len(phones))
 		for _, p := range phones {
 			// Skip if they are an employee
 			isEmp, _ := db.IsEmployee(p)
@@ -122,9 +130,11 @@ func InitScheduler() {
 			return
 		}
 
-		phones, err := db.GetAllPhoneNumbers()
-		if err != nil || len(phones) == 0 {
-			log.Println("[Scheduler] No contacts to broadcast to")
+		// Only contacts inside the 24h window: campaigns are not templates, so
+		// Meta rejects them for everyone else.
+		phones, err := db.GetPhonesInServiceWindow()
+		if err != nil {
+			log.Println("[Scheduler] Error fetching campaign recipients:", err)
 			return
 		}
 
@@ -141,13 +151,18 @@ func InitScheduler() {
 				continue
 			}
 
-			log.Printf("[Scheduler] Broadcasting campaign #%d (%s) to %d contacts", camp.ID, camp.Type, len(phones))
+			log.Printf("[Scheduler] Broadcasting campaign #%d (%s) to %d contacts in the 24h window", camp.ID, camp.Type, len(phones))
 
-			switch strings.ToLower(camp.Type) {
-			case "quiz":
-				broadcastQuiz(camp, phones)
-			case "poster":
-				broadcastPoster(camp, phones)
+			// With nobody in the window the campaign is still marked sent, to
+			// 0. Leaving it due would fire it at whatever minute the next
+			// person happened to message, to that one person.
+			if len(phones) > 0 {
+				switch strings.ToLower(camp.Type) {
+				case "quiz":
+					broadcastQuiz(camp, phones)
+				case "poster":
+					broadcastPoster(camp, phones)
+				}
 			}
 
 			if err := db.MarkCampaignSent(camp.ID, len(phones)); err != nil {
@@ -206,6 +221,50 @@ func broadcastQuiz(camp db.Campaign, phones []string) {
 	}
 }
 
+// posterButtonActions are the button IDs a poster may carry. Each is handled
+// by handleMessage whatever state the conversation is in, which is what a
+// button on a broadcast needs: the person tapping it may be anywhere in a
+// flow. The panel offers the same list.
+var posterButtonActions = map[string]bool{
+	"main_menu":      true, // opening message
+	"talk_to_expert": true, // support categories
+	"our_solutions":  true, // solutions menu
+	"about_askworx":  true, // about the company
+	"flow_quotation": true, // quotation lead form
+	"flow_callback":  true, // callback lead form
+	"flow_service":   true, // service request lead form
+}
+
+// validateCampaignButtons returns a reason the buttons cannot be sent, or ""
+// if they can. None at all is allowed: the poster then uses the defaults.
+func validateCampaignButtons(buttons []db.CampaignButton) string {
+	if len(buttons) > 3 {
+		return "a poster can have at most 3 buttons"
+	}
+	seenIDs := map[string]bool{}
+	seenTitles := map[string]bool{}
+	for i := range buttons {
+		b := &buttons[i]
+		b.Title = strings.TrimSpace(b.Title)
+		if b.Title == "" {
+			return "every button needs text"
+		}
+		// WhatsApp's limit. sendImageWithButtons would otherwise cut it
+		// short with an ellipsis the operator never saw.
+		if len([]rune(b.Title)) > 20 {
+			return fmt.Sprintf("button text %q is longer than 20 characters", b.Title)
+		}
+		if !posterButtonActions[b.ID] {
+			return fmt.Sprintf("button %q has an action the bot does not handle", b.Title)
+		}
+		if seenIDs[b.ID] || seenTitles[b.Title] {
+			return "two buttons cannot do the same thing or have the same text"
+		}
+		seenIDs[b.ID], seenTitles[b.Title] = true, true
+	}
+	return ""
+}
+
 func broadcastPoster(camp db.Campaign, phones []string) {
 	publicURL := os.Getenv("PUBLIC_URL")
 	actualImageURL := camp.ImageURL
@@ -234,9 +293,16 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 		os.Getenv("COMPANY_NAME"), body,
 	)
 
+	// Posters saved before buttons were editable keep the original pair.
 	buttons := []Button{
 		{ID: "expert", Title: db.ButtonLabel("expert", "Talk to Expert 📞")},
 		{ID: "menu", Title: db.ButtonLabel("menu", "Main Menu 🏠")},
+	}
+	if len(camp.Buttons) > 0 {
+		buttons = make([]Button, 0, len(camp.Buttons))
+		for _, b := range camp.Buttons {
+			buttons = append(buttons, Button{ID: b.ID, Title: b.Title})
+		}
 	}
 
 	for _, phone := range phones {
