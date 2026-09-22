@@ -216,7 +216,18 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 		caption += "\n\n" + closing
 	}
 
+	// One button, so the message is not a dead end. about_askworx is an action
+	// the bot already answers (handler.go), so tapping it starts a real
+	// conversation rather than falling through to the menu. The label is plain
+	// text on purpose — no icon — and editable from settings.
+	buttons := []Button{
+		{
+			ID:    "about_askworx",
+			Title: db.SettingOr("poster_button", fmt.Sprintf("About %s", os.Getenv("COMPANY_NAME"))),
+		},
+	}
+
 	for _, phone := range phones {
-		sendImage(phone, actualImageURL, caption)
+		sendImageWithButtons(phone, actualImageURL, caption, buttons)
 	}
 }
