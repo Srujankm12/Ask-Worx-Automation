@@ -196,10 +196,25 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 		body = fmt.Sprintf("*%s*\n\n%s", camp.Title, camp.Description)
 	}
 
-	caption := fmt.Sprintf(
-		"%s\n\n🌐 www.askworx.in\n📧 contact@askworx.in",
-		strings.TrimSpace(body),
-	)
+	// What closes the message. A broadcast that set its own links uses those;
+	// otherwise it falls back to the website and email from settings, which
+	// the panel can edit, so the default is not frozen in this file.
+	closing := strings.TrimSpace(camp.Links)
+	if closing == "" {
+		var lines []string
+		if site := strings.TrimSpace(db.SettingOr("poster_website", "www.askworx.in")); site != "" {
+			lines = append(lines, "🌐 "+site)
+		}
+		if email := strings.TrimSpace(db.SettingOr("poster_email", "contact@askworx.in")); email != "" {
+			lines = append(lines, "📧 "+email)
+		}
+		closing = strings.Join(lines, "\n")
+	}
+
+	caption := strings.TrimSpace(body)
+	if closing != "" {
+		caption += "\n\n" + closing
+	}
 
 	for _, phone := range phones {
 		sendImage(phone, actualImageURL, caption)

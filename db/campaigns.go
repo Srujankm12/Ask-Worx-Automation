@@ -21,6 +21,9 @@ type Campaign struct {
 	Caption       string `json:"caption"` // legacy single-field posters, pre-title/description
 	Title         string `json:"title"`
 	Description   string `json:"description"`
+	// The closing lines under the text. Empty means the poster falls back to
+	// the website and email held in settings.
+	Links string `json:"links"`
 	// Metadata for a poster image stored directly in the database (image_data,
 	// scanned separately by GetCampaignImage — never through this struct, so a
 	// campaigns list response never carries a multi-hundred-KB base64 blob).
@@ -38,14 +41,14 @@ type Campaign struct {
 // (a pasted link, or one already rewritten by the caller) instead.
 func CreateCampaign(c Campaign, imageData []byte) (int, error) {
 	query := `INSERT INTO campaigns
-		(type, question, option_a, option_b, option_c, correct_answer, explanation, youtube_link, image_url, caption, title, description, scheduled_at, image_name, image_type, image_size, image_data)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		(type, question, option_a, option_b, option_c, correct_answer, explanation, youtube_link, image_url, caption, title, description, links, scheduled_at, image_name, image_type, image_size, image_data)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		RETURNING id`
 	var id int
 	err := Pool.QueryRow(context.Background(), query,
 		c.Type, c.Question, c.OptionA, c.OptionB, c.OptionC,
 		c.CorrectAnswer, c.Explanation, c.YouTubeLink,
-		c.ImageURL, c.Caption, c.Title, c.Description, c.ScheduledAt,
+		c.ImageURL, c.Caption, c.Title, c.Description, c.Links, c.ScheduledAt,
 		c.ImageName, c.ImageType, c.ImageSize, imageData,
 	).Scan(&id)
 	return id, err
@@ -74,7 +77,7 @@ func GetCampaignImage(id int) ([]byte, string, error) {
 func GetAllCampaigns() ([]Campaign, error) {
 	rows, err := Pool.Query(context.Background(),
 		`SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
-		        youtube_link, image_url, caption, title, description, image_name, image_type, image_size,
+		        youtube_link, image_url, caption, title, description, links, image_name, image_type, image_size,
 		        scheduled_at, status, total_sent, created_at
 		 FROM campaigns ORDER BY scheduled_at DESC`)
 	if err != nil {
@@ -87,7 +90,7 @@ func GetAllCampaigns() ([]Campaign, error) {
 		var c Campaign
 		err := rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
-			&c.Title, &c.Description, &c.ImageName, &c.ImageType, &c.ImageSize,
+			&c.Title, &c.Description, &c.Links, &c.ImageName, &c.ImageType, &c.ImageSize,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
 			// Silently dropping the row hid a whole page of campaigns behind a
@@ -105,7 +108,7 @@ func GetAllCampaigns() ([]Campaign, error) {
 func GetDueCampaigns() ([]Campaign, error) {
 	rows, err := Pool.Query(context.Background(),
 		`SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
-		        youtube_link, image_url, caption, title, description, image_name, image_type, image_size,
+		        youtube_link, image_url, caption, title, description, links, image_name, image_type, image_size,
 		        scheduled_at, status, total_sent, created_at
 		 FROM campaigns WHERE status = 'scheduled' AND scheduled_at <= NOW()`)
 	if err != nil {
@@ -118,7 +121,7 @@ func GetDueCampaigns() ([]Campaign, error) {
 		var c Campaign
 		rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
-			&c.Title, &c.Description, &c.ImageName, &c.ImageType, &c.ImageSize,
+			&c.Title, &c.Description, &c.Links, &c.ImageName, &c.ImageType, &c.ImageSize,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		campaigns = append(campaigns, c)
 	}
@@ -165,7 +168,7 @@ func CancelCampaign(id int) error {
 
 func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, error) {
 	query := `SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
-		        youtube_link, image_url, caption, title, description, image_name, image_type, image_size,
+		        youtube_link, image_url, caption, title, description, links, image_name, image_type, image_size,
 		        scheduled_at, status, total_sent, created_at
 		 FROM campaigns WHERE 1=1`
 	args := []interface{}{}
@@ -196,7 +199,7 @@ func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, er
 		var c Campaign
 		err := rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
-			&c.Title, &c.Description, &c.ImageName, &c.ImageType, &c.ImageSize,
+			&c.Title, &c.Description, &c.Links, &c.ImageName, &c.ImageType, &c.ImageSize,
 			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
 			// Silently dropping the row hid a whole page of campaigns behind a

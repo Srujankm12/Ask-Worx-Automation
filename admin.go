@@ -53,6 +53,7 @@ func parseCampaignMultipart(w http.ResponseWriter, r *http.Request, c *db.Campai
 	c.Caption = r.FormValue("caption")
 	c.Title = r.FormValue("title")
 	c.Description = r.FormValue("description")
+	c.Links = r.FormValue("links")
 
 	if scheduledAt := r.FormValue("scheduled_at"); scheduledAt != "" {
 		t, err := time.Parse(time.RFC3339, scheduledAt)
@@ -487,6 +488,54 @@ func AdminRoutes() chi.Router {
 	})
 
 	// ── Employee Management ─────────────────────────────────────────────────
+
+	// ── Saved broadcast templates ───────────────────────────────────────────
+
+	r.Get("/templates", func(w http.ResponseWriter, r *http.Request) {
+		templates, err := db.GetTemplates()
+		if err != nil {
+			log.Printf("[Templates] could not list: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "Could not load your saved templates.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(templates)
+	})
+
+	r.Post("/templates", func(w http.ResponseWriter, r *http.Request) {
+		var t db.Template
+		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		t.Name = strings.TrimSpace(t.Name)
+		if t.Name == "" {
+			writeJSONError(w, http.StatusBadRequest, "Give the template a name.")
+			return
+		}
+		if strings.TrimSpace(t.Title) == "" && strings.TrimSpace(t.Description) == "" {
+			writeJSONError(w, http.StatusBadRequest, "A template needs a title or a description.")
+			return
+		}
+		id, err := db.CreateTemplate(t)
+		if err != nil {
+			log.Printf("[Templates] could not save %q: %v", t.Name, err)
+			writeJSONError(w, http.StatusInternalServerError, "Could not save that template. Please try again.")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"id": id})
+	})
+
+	r.Delete("/templates/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var id int
+		fmt.Sscanf(chi.URLParam(r, "id"), "%d", &id)
+		if err := db.DeleteTemplate(id); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not delete that template.")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 
 	r.Get("/employees", func(w http.ResponseWriter, r *http.Request) {
 		limit, offset, _, _ := parseCommonParams(r)

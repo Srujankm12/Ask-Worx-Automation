@@ -75,6 +75,23 @@ ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_type VARCHAR(50) DEFAULT ''
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_size INTEGER DEFAULT 0;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_data BYTEA;
 
+-- The closing lines under a poster's text. Empty means fall back to the
+-- website and email in settings, so most broadcasts need not think about it.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS links TEXT DEFAULT '';
+
+-- A broadcast saved to send again. Holds the words and a link to the image,
+-- never the image bytes: an uploaded poster's image is already served at
+-- /api/campaigns/{id}/image, and that URL is what gets stored here.
+CREATE TABLE IF NOT EXISTS broadcast_templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    image_url TEXT NOT NULL DEFAULT '',
+    links TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- A poster's reply buttons, as [{"id": ..., "title": ...}]. NULL means the
 -- poster predates custom buttons and goes out with the original pair.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS buttons JSONB;
