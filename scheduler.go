@@ -157,12 +157,7 @@ func InitScheduler() {
 			// 0. Leaving it due would fire it at whatever minute the next
 			// person happened to message, to that one person.
 			if len(phones) > 0 {
-				switch strings.ToLower(camp.Type) {
-				case "quiz":
-					broadcastQuiz(camp, phones)
-				case "poster":
-					broadcastPoster(camp, phones)
-				}
+				broadcastPoster(camp, phones)
 			}
 
 			if err := db.MarkCampaignSent(camp.ID, len(phones)); err != nil {
@@ -179,92 +174,6 @@ func InitScheduler() {
 
 // Removed duplicate sendMorningCheckIn (now in internal.go)
 
-func broadcastQuiz(camp db.Campaign, phones []string) {
-	quizBody := fmt.Sprintf(
-		"🌟 *%s Industrial Insight* 🌟\n\n"+
-			"*WEEKLY KNOWLEDGE CHALLENGE*\n\n"+
-			"❓ *QUESTION:*\n%s?\n\n"+
-			"📍 *OPTIONS:*\n"+
-			"📍 *A:* %s\n"+
-			"📍 *B:* %s\n"+
-			"📍 *C:* %s\n\n"+
-			"👉 *Tap your answer below to participate!*",
-		os.Getenv("COMPANY_NAME"), camp.Question, camp.OptionA, camp.OptionB, camp.OptionC,
-	)
-
-	buttons := []Button{
-		{ID: "A", Title: "Option A"},
-		{ID: "B", Title: "Option B"},
-		{ID: "C", Title: "Option C"},
-	}
-
-	// Deactivate any previous quiz first
-	db.DeactivateAllQuizzes()
-
-	// Create quiz entry from campaign
-	quizID, err := db.CreateQuizFromCampaign(camp)
-	if err != nil {
-		log.Printf("[Scheduler] Failed to create quiz entry: %v", err)
-		return
-	}
-	log.Printf("[Scheduler] Activated quiz #%d", quizID)
-
-	for _, phone := range phones {
-		sendInteractiveButtons(phone, quizBody, buttons)
-
-		// ENGAGEMENT TRIGGER: Wait exactly 2 minutes, then send the premium engagement message
-		go func(p string) {
-			time.Sleep(2 * time.Minute)
-			log.Printf("[Scheduler] Sending 2-min engagement nudge to %s", p)
-			sendEngagementNudge(p)
-		}(phone)
-	}
-}
-
-// posterButtonActions are the button IDs a poster may carry. Each is handled
-// by handleMessage whatever state the conversation is in, which is what a
-// button on a broadcast needs: the person tapping it may be anywhere in a
-// flow. The panel offers the same list.
-var posterButtonActions = map[string]bool{
-	"main_menu":      true, // opening message
-	"talk_to_expert": true, // support categories
-	"our_solutions":  true, // solutions menu
-	"about_askworx":  true, // about the company
-	"flow_quotation": true, // quotation lead form
-	"flow_callback":  true, // callback lead form
-	"flow_service":   true, // service request lead form
-}
-
-// validateCampaignButtons returns a reason the buttons cannot be sent, or ""
-// if they can. None at all is allowed: the poster then uses the defaults.
-func validateCampaignButtons(buttons []db.CampaignButton) string {
-	if len(buttons) > 3 {
-		return "a poster can have at most 3 buttons"
-	}
-	seenIDs := map[string]bool{}
-	seenTitles := map[string]bool{}
-	for i := range buttons {
-		b := &buttons[i]
-		b.Title = strings.TrimSpace(b.Title)
-		if b.Title == "" {
-			return "every button needs text"
-		}
-		// WhatsApp's limit. sendImageWithButtons would otherwise cut it
-		// short with an ellipsis the operator never saw.
-		if len([]rune(b.Title)) > 20 {
-			return fmt.Sprintf("button text %q is longer than 20 characters", b.Title)
-		}
-		if !posterButtonActions[b.ID] {
-			return fmt.Sprintf("button %q has an action the bot does not handle", b.Title)
-		}
-		if seenIDs[b.ID] || seenTitles[b.Title] {
-			return "two buttons cannot do the same thing or have the same text"
-		}
-		seenIDs[b.ID], seenTitles[b.Title] = true, true
-	}
-	return ""
-}
-
 func broadcastPoster(camp db.Campaign, phones []string) {
 	publicURL := os.Getenv("PUBLIC_URL")
 	actualImageURL := camp.ImageURL
@@ -276,36 +185,23 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 		log.Printf("[Scheduler] Local image detected. Rewriting to public: %s", actualImageURL)
 	}
 
-	// Posters created before the title/description split only have Caption;
-	// keep sending those exactly as before rather than a blank body.
+	// The image carries the message; the caption is just what was typed in the
+	// panel, followed by how to get in touch. No banner heading, no rule
+	// lines, and no reply buttons — a poster is an announcement, not a menu.
+	//
+	// Posters created before the title/description split only have Caption, so
+	// those still send their original text rather than a blank body.
 	body := camp.Caption
 	if camp.Title != "" || camp.Description != "" {
 		body = fmt.Sprintf("*%s*\n\n%s", camp.Title, camp.Description)
 	}
 
-	premiumCaption := fmt.Sprintf(
-		"📢 *%s Industrial Update* 📢\n"+
-			"──────────────────⬡\n\n"+
-			"%s\n\n"+
-			"──────────────────⬡\n"+
-			"🌐 *Visit us:* www.askworx.in\n"+
-			"📧 *Support:* contact@askworx.in",
-		os.Getenv("COMPANY_NAME"), body,
+	caption := fmt.Sprintf(
+		"%s\n\n🌐 www.askworx.in\n📧 contact@askworx.in",
+		strings.TrimSpace(body),
 	)
 
-	// Posters saved before buttons were editable keep the original pair.
-	buttons := []Button{
-		{ID: "expert", Title: db.ButtonLabel("expert", "Talk to Expert 📞")},
-		{ID: "menu", Title: db.ButtonLabel("menu", "Main Menu 🏠")},
-	}
-	if len(camp.Buttons) > 0 {
-		buttons = make([]Button, 0, len(camp.Buttons))
-		for _, b := range camp.Buttons {
-			buttons = append(buttons, Button{ID: b.ID, Title: b.Title})
-		}
-	}
-
 	for _, phone := range phones {
-		sendImageWithButtons(phone, actualImageURL, premiumCaption, buttons)
+		sendImage(phone, actualImageURL, caption)
 	}
 }

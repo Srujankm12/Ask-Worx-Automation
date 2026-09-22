@@ -413,41 +413,20 @@ func AdminRoutes() chi.Router {
 			return
 		}
 
-		// Validation
-		if c.Type != "quiz" && c.Type != "poster" {
-			writeJSONError(w, http.StatusBadRequest, "type must be 'quiz' or 'poster'")
+		// Validation. A broadcast is a poster: an image, a title and a
+		// description. Quizzes are no longer sent, so "poster" is the only
+		// type this accepts.
+		if c.Type != "poster" {
+			writeJSONError(w, http.StatusBadRequest, "type must be 'poster'")
 			return
 		}
-		if c.Type == "quiz" {
-			if c.Question == "" || c.OptionA == "" || c.OptionB == "" || c.OptionC == "" || c.Explanation == "" {
-				writeJSONError(w, http.StatusBadRequest, "all quiz fields are required")
-				return
-			}
-			c.CorrectAnswer = strings.ToUpper(c.CorrectAnswer)
-			if c.CorrectAnswer != "A" && c.CorrectAnswer != "B" && c.CorrectAnswer != "C" {
-				writeJSONError(w, http.StatusBadRequest, "correct_answer must be A, B, or C")
-				return
-			}
-			if len([]rune(c.Explanation)) > 300 {
-				writeJSONError(w, http.StatusBadRequest, "explanation must not exceed 300 characters")
-				return
-			}
-		}
-		if c.Type == "poster" && c.ImageURL == "" && len(imageData) == 0 {
-			writeJSONError(w, http.StatusBadRequest, "image_url or an uploaded image is required for posters")
+		if c.ImageURL == "" && len(imageData) == 0 {
+			writeJSONError(w, http.StatusBadRequest, "image_url or an uploaded image is required")
 			return
 		}
-		if c.Type == "poster" && (strings.TrimSpace(c.Title) == "" || strings.TrimSpace(c.Description) == "") {
-			writeJSONError(w, http.StatusBadRequest, "title and description are required for posters")
+		if strings.TrimSpace(c.Title) == "" || strings.TrimSpace(c.Description) == "" {
+			writeJSONError(w, http.StatusBadRequest, "title and description are required")
 			return
-		}
-		if c.Type == "poster" {
-			if msg := validateCampaignButtons(c.Buttons); msg != "" {
-				http.Error(w, msg, http.StatusBadRequest)
-				return
-			}
-		} else {
-			c.Buttons = nil // quiz buttons are always A, B and C
 		}
 		if c.ScheduledAt.IsZero() {
 			writeJSONError(w, http.StatusBadRequest, "scheduled_at is required")
@@ -505,19 +484,6 @@ func AdminRoutes() chi.Router {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
 		w.Write(data)
-	})
-
-	r.Get("/campaigns/{id}/analytics", func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "id")
-		var id int
-		fmt.Sscanf(idStr, "%d", &id)
-		analytics, err := db.GetCampaignAnalytics(id)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(analytics)
 	})
 
 	// ── Employee Management ─────────────────────────────────────────────────

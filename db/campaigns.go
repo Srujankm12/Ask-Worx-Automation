@@ -2,22 +2,14 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
 )
 
-// CampaignButton is one reply button under a poster. ID is what the bot
-// receives when it is tapped, so it has to be an action the bot handles.
-type CampaignButton struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-}
-
 type Campaign struct {
 	ID            int    `json:"id"`
-	Type          string `json:"type"` // "quiz" or "poster"
+	Type          string `json:"type"` // always "poster"
 	Question      string `json:"question"`
 	OptionA       string `json:"option_a"`
 	OptionB       string `json:"option_b"`
@@ -39,69 +31,22 @@ type Campaign struct {
 	Status      string    `json:"status"` // scheduled | sending | sent | cancelled
 	TotalSent   int       `json:"total_sent"`
 	CreatedAt   time.Time `json:"created_at"`
-	// Empty for quizzes, and for posters saved before buttons were editable.
-	Buttons []CampaignButton `json:"buttons"`
-}
-
-type QuizResponseDetail struct {
-	Phone     string `json:"phone"`
-	Name      string `json:"name"`
-	Answer    string `json:"answer"`
-	IsCorrect bool   `json:"is_correct"`
-}
-
-type CampaignAnalytics struct {
-	CampaignID   int                  `json:"campaign_id"`
-	TotalSent    int                  `json:"total_sent"`
-	TotalAnswers int                  `json:"total_answers"`
-	Correct      int                  `json:"correct"`
-	Incorrect    int                  `json:"incorrect"`
-	AnswerA      int                  `json:"answer_a"`
-	AnswerB      int                  `json:"answer_b"`
-	AnswerC      int                  `json:"answer_c"`
-	Responses    []QuizResponseDetail `json:"responses"`
-}
-
-// decodeButtons reads the buttons column. A value that will not parse is
-// logged and treated as empty, so the poster still goes out with the original
-// buttons rather than not at all.
-func decodeButtons(campaignID int, raw []byte) []CampaignButton {
-	buttons := []CampaignButton{}
-	if len(raw) == 0 {
-		return buttons
-	}
-	if err := json.Unmarshal(raw, &buttons); err != nil {
-		log.Printf("[Campaigns] campaign #%d has unreadable buttons, using the defaults: %v", campaignID, err)
-		return []CampaignButton{}
-	}
-	return buttons
 }
 
 // CreateCampaign inserts a new campaign and returns its ID. imageData is the
 // raw bytes of an uploaded poster image, nil when the poster uses image_url
 // (a pasted link, or one already rewritten by the caller) instead.
 func CreateCampaign(c Campaign, imageData []byte) (int, error) {
-	// NULL rather than [] when there are none, so a poster with no custom
-	// buttons reads the same as one saved before the column existed.
-	var buttons any
-	if len(c.Buttons) > 0 {
-		raw, err := json.Marshal(c.Buttons)
-		if err != nil {
-			return 0, err
-		}
-		buttons = string(raw)
-	}
-
 	query := `INSERT INTO campaigns
-		(type, question, option_a, option_b, option_c, correct_answer, explanation, youtube_link, image_url, caption, title, description, scheduled_at, image_name, image_type, image_size, image_data, buttons)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
+		(type, question, option_a, option_b, option_c, correct_answer, explanation, youtube_link, image_url, caption, title, description, scheduled_at, image_name, image_type, image_size, image_data)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 		RETURNING id`
 	var id int
 	err := Pool.QueryRow(context.Background(), query,
 		c.Type, c.Question, c.OptionA, c.OptionB, c.OptionC,
 		c.CorrectAnswer, c.Explanation, c.YouTubeLink,
 		c.ImageURL, c.Caption, c.Title, c.Description, c.ScheduledAt,
-		c.ImageName, c.ImageType, c.ImageSize, imageData, buttons,
+		c.ImageName, c.ImageType, c.ImageSize, imageData,
 	).Scan(&id)
 	return id, err
 }
@@ -130,8 +75,7 @@ func GetAllCampaigns() ([]Campaign, error) {
 	rows, err := Pool.Query(context.Background(),
 		`SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
 		        youtube_link, image_url, caption, title, description, image_name, image_type, image_size,
-		        scheduled_at, status, total_sent, created_at,
-		        COALESCE(buttons, '[]'::jsonb)
+		        scheduled_at, status, total_sent, created_at
 		 FROM campaigns ORDER BY scheduled_at DESC`)
 	if err != nil {
 		return nil, err
@@ -141,11 +85,10 @@ func GetAllCampaigns() ([]Campaign, error) {
 	var campaigns []Campaign
 	for rows.Next() {
 		var c Campaign
-		var rawButtons []byte
 		err := rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
 			&c.Title, &c.Description, &c.ImageName, &c.ImageType, &c.ImageSize,
-			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt, &rawButtons)
+			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
 			// Silently dropping the row hid a whole page of campaigns behind a
 			// 200 with an empty list. Skipping is still the right recovery, but
@@ -153,7 +96,6 @@ func GetAllCampaigns() ([]Campaign, error) {
 			log.Printf("[Campaigns] skipping unreadable row: %v", err)
 			continue
 		}
-		c.Buttons = decodeButtons(c.ID, rawButtons)
 		campaigns = append(campaigns, c)
 	}
 	return campaigns, nil
@@ -164,8 +106,7 @@ func GetDueCampaigns() ([]Campaign, error) {
 	rows, err := Pool.Query(context.Background(),
 		`SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
 		        youtube_link, image_url, caption, title, description, image_name, image_type, image_size,
-		        scheduled_at, status, total_sent, created_at,
-		        COALESCE(buttons, '[]'::jsonb)
+		        scheduled_at, status, total_sent, created_at
 		 FROM campaigns WHERE status = 'scheduled' AND scheduled_at <= NOW()`)
 	if err != nil {
 		return nil, err
@@ -175,12 +116,10 @@ func GetDueCampaigns() ([]Campaign, error) {
 	var campaigns []Campaign
 	for rows.Next() {
 		var c Campaign
-		var rawButtons []byte
 		rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
 			&c.Title, &c.Description, &c.ImageName, &c.ImageType, &c.ImageSize,
-			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt, &rawButtons)
-		c.Buttons = decodeButtons(c.ID, rawButtons)
+			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		campaigns = append(campaigns, c)
 	}
 	return campaigns, nil
@@ -224,60 +163,10 @@ func CancelCampaign(id int) error {
 	return err
 }
 
-// GetCampaignAnalytics returns quiz response stats for a campaign.
-func GetCampaignAnalytics(campaignID int) (CampaignAnalytics, error) {
-	a := CampaignAnalytics{CampaignID: campaignID}
-
-	// Get total_sent from campaign row
-	Pool.QueryRow(context.Background(),
-		`SELECT total_sent FROM campaigns WHERE id = $1`, campaignID).Scan(&a.TotalSent)
-
-	// Quiz specific — filter responses by checking which quiz rows belong to this campaign
-	rows, err := Pool.Query(context.Background(),
-		`SELECT qr.phone, 
-		        COALESCE(NULLIF(c.name, ''), NULLIF(l.name, ''), 'Unknown'), 
-		        qr.answer, qr.is_correct 
-		 FROM quiz_responses qr
-		 LEFT JOIN contacts c ON qr.phone = c.phone
-		 LEFT JOIN (
-		     SELECT DISTINCT ON (phone) phone, name 
-		     FROM leads 
-		     ORDER BY phone, created_at DESC
-		 ) l ON qr.phone = l.phone
-		 WHERE qr.quiz_id IN (SELECT id FROM quizzes WHERE campaign_id = $1)`, campaignID)
-	if err != nil {
-		return a, nil // analytics unavailable for posters
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var detail QuizResponseDetail
-		rows.Scan(&detail.Phone, &detail.Name, &detail.Answer, &detail.IsCorrect)
-
-		a.Responses = append(a.Responses, detail)
-		a.TotalAnswers++
-		if detail.IsCorrect {
-			a.Correct++
-		} else {
-			a.Incorrect++
-		}
-		switch detail.Answer {
-		case "A":
-			a.AnswerA++
-		case "B":
-			a.AnswerB++
-		case "C":
-			a.AnswerC++
-		}
-	}
-	return a, nil
-}
-
 func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, error) {
 	query := `SELECT id, type, question, option_a, option_b, option_c, correct_answer, explanation,
 		        youtube_link, image_url, caption, title, description, image_name, image_type, image_size,
-		        scheduled_at, status, total_sent, created_at,
-		        COALESCE(buttons, '[]'::jsonb)
+		        scheduled_at, status, total_sent, created_at
 		 FROM campaigns WHERE 1=1`
 	args := []interface{}{}
 	argID := 1
@@ -305,11 +194,10 @@ func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, er
 	var campaigns []Campaign
 	for rows.Next() {
 		var c Campaign
-		var rawButtons []byte
 		err := rows.Scan(&c.ID, &c.Type, &c.Question, &c.OptionA, &c.OptionB, &c.OptionC,
 			&c.CorrectAnswer, &c.Explanation, &c.YouTubeLink, &c.ImageURL, &c.Caption,
 			&c.Title, &c.Description, &c.ImageName, &c.ImageType, &c.ImageSize,
-			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt, &rawButtons)
+			&c.ScheduledAt, &c.Status, &c.TotalSent, &c.CreatedAt)
 		if err != nil {
 			// Silently dropping the row hid a whole page of campaigns behind a
 			// 200 with an empty list. Skipping is still the right recovery, but
@@ -317,7 +205,6 @@ func GetCampaignsPaginated(limit, offset int, start, end string) ([]Campaign, er
 			log.Printf("[Campaigns] skipping unreadable row: %v", err)
 			continue
 		}
-		c.Buttons = decodeButtons(c.ID, rawButtons)
 		campaigns = append(campaigns, c)
 	}
 	return campaigns, nil
@@ -342,21 +229,4 @@ func GetTotalCampaignsCount(start, end string) (int, error) {
 	var count int
 	err := Pool.QueryRow(context.Background(), query, args...).Scan(&count)
 	return count, err
-}
-
-// DeactivateAllQuizzes marks all quizzes as inactive before activating a new one.
-func DeactivateAllQuizzes() {
-	Pool.Exec(context.Background(), `UPDATE quizzes SET is_active = false`)
-}
-
-// CreateQuizFromCampaign inserts a new active quiz row from a campaign and returns its ID.
-func CreateQuizFromCampaign(c Campaign) (int, error) {
-	query := `INSERT INTO quizzes (campaign_id, question, option_a, option_b, option_c, correct_answer, explanation, youtube_link, is_active)
-	          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true) RETURNING id`
-	var id int
-	err := Pool.QueryRow(context.Background(), query,
-		c.ID, c.Question, c.OptionA, c.OptionB, c.OptionC,
-		c.CorrectAnswer, c.Explanation, c.YouTubeLink,
-	).Scan(&id)
-	return id, err
 }

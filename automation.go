@@ -12,61 +12,23 @@ import (
 // ─── SESSION STATES FOR AUTOMATION ───────────────────────────────────────────
 
 const (
-	StateQueryCategory   SessionState = "query_category"
-	StateQuizExplanation SessionState = "quiz_explanation"
+	StateQueryCategory SessionState = "query_category"
 )
 
 // pendingMessages stores the user's original message while they select a category
 var pendingMessages = map[string]string{}
 
-// quizSessionStore stores which quiz the user is currently interacting with in the conversational flow
-var quizSessionStore = map[string]*db.Quiz{}
-
 // ─── PRIORITY DISPATCHER ──────────────────────────────────────────────────────
 func tryAutomationModules(phone, rawInput string) bool {
 	upper := strings.ToUpper(strings.TrimSpace(rawInput))
 
-	// ── Priority 1: Quiz Explanation Flow (Ongoing conversational state) ─────
-	if sessions[phone] == StateQuizExplanation {
-		handleQuizExplanationReply(phone, upper)
-		return true
-	}
-
-	// ── Priority 2: Active Quiz — ONLY handle if they type A, B, or C ────────
-	quiz, err := db.GetActiveQuiz()
-	if err != nil {
-		log.Printf("[Quiz] DB error: %v", err)
-	}
-	if quiz != nil {
-		answered, _ := db.HasUserResponded(quiz.ID, phone)
-		if !answered {
-			isA := (upper == "A" || strings.Contains(upper, "OPTION A") || upper == "1")
-			isB := (upper == "B" || strings.Contains(upper, "OPTION B") || upper == "2")
-			isC := (upper == "C" || strings.Contains(upper, "OPTION C") || upper == "3")
-
-			if isA || isB || isC {
-				ans := "A"
-				if isB {
-					ans = "B"
-				}
-				if isC {
-					ans = "C"
-				}
-				handleQuizResponse(phone, ans, quiz)
-				return true
-			}
-			// Important: If it's NOT A, B, or C, we just return false
-			// so the main handler can show the Menu. No more "Selection Force".
-		}
-	}
-
-	// ── Priority 3: FAQ Knowledge Base ───────────────────────────────────────
+	// ── Priority 1: FAQ Knowledge Base ───────────────────────────────────────
 	if ans, confident := tryFAQMatch(rawInput); confident {
 		sendFAQAnswer(phone, ans)
 		return true
 	}
 
-	// ── Priority 4: Query category selection (ongoing Module 2 session) ──────
+	// ── Priority 2: Query category selection (ongoing Module 2 session) ──────
 	if sessions[phone] == StateQueryCategory {
 		handleQueryCategoryReply(phone, upper, rawInput)
 		return true
@@ -75,63 +37,7 @@ func tryAutomationModules(phone, rawInput string) bool {
 	return false
 }
 
-// ─── MODULE 1: QUIZ FLOW ──────────────────────────────────────────────────────
-
-func handleQuizResponse(phone, answer string, quiz *db.Quiz) {
-	isCorrect := answer == strings.ToUpper(quiz.CorrectAnswer)
-
-	if err := db.SaveQuizResponse(quiz.ID, phone, answer, isCorrect); err != nil {
-		log.Printf("[Quiz] Save error: %v", err)
-	}
-
-	var msg string
-	if isCorrect {
-		msg = fmt.Sprintf("🎉 *Thank you for participating in the %s Weekly Knowledge Challenge!*\n\n✅ *Awesome! That's the correct answer.*\n\nWould you like to see the detailed explanation? Tap below! 👇", os.Getenv("COMPANY_NAME"))
-	} else {
-		msg = fmt.Sprintf("🎉 *Thank you for participating in the %s Weekly Knowledge Challenge!*\n\n❌ *Oops! That was a tricky one, but it's not quite correct.*\n\nWould you like to see the right answer and explanation? Tap below! 👇", os.Getenv("COMPANY_NAME"))
-	}
-
-	// Store quiz and update state
-	quizSessionStore[phone] = quiz
-	sessions[phone] = StateQuizExplanation
-
-	// Send as buttons for even easier interaction
-	buttons := []Button{
-		{ID: "YES", Title: "Yes, Explain"},
-		{ID: "NO", Title: "No, Later"},
-	}
-	sendInteractiveButtons(phone, msg, buttons)
-}
-
-func handleQuizExplanationReply(phone, upper string) {
-	quiz := quizSessionStore[phone]
-	if quiz == nil {
-		sessions[phone] = StateMain
-		return
-	}
-
-	if upper == "YES" {
-		msg := fmt.Sprintf(
-			"🎯 *The Correct Answer is: %s*\n\n%s\n\n🎥 Watch video: %s",
-			strings.ToUpper(quiz.CorrectAnswer),
-			quiz.Explanation,
-			quiz.YouTubeLink,
-		)
-		sendTextMessage(phone, msg)
-	} else if upper == "NO" {
-		sendTextMessage(phone, "👍 No problem! Stay tuned for next week's quiz.")
-	} else {
-		// Invalid response while in this state
-		sendTextMessage(phone, "Please reply *YES* or *NO* to see the quiz explanation.")
-		return
-	}
-
-	// Reset state
-	sessions[phone] = StateMain
-	delete(quizSessionStore, phone)
-}
-
-// StartQueryFlow initiates the support assistant flow — called when no quiz/FAQ matched.
+// StartQueryFlow initiates the support assistant flow — called when no FAQ matched.
 func StartQueryFlow(phone, originalMessage string) {
 	log.Printf("[Support] Starting assistant flow for %s", phone)
 
@@ -236,21 +142,4 @@ func tryFAQMatch(input string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// sendEngagementNudge sends a professional business introduction to convert
-// quiz interest into service inquiries.
-func sendEngagementNudge(phone string) {
-	greeting := fmt.Sprintf("👋 Welcome to %s.\n\n"+
-		"We are a Ground-to-Cloud automation company helping businesses with industrial automation, digital transformation, and smart engineering solutions.\n\n"+
-		"From PLC, SCADA, and IIoT systems to software development, CRM solutions, and digital marketing — we provide complete end-to-end solutions.\n\n"+
-		"How can we assist you today?", os.Getenv("COMPANY_NAME"))
-
-	buttons := []Button{
-		{ID: "flow_service", Title: db.ButtonLabel("flow_service", "🔧 Service Request")},
-		{ID: "flow_quotation", Title: db.ButtonLabel("flow_quotation", "💰 Get a Quote")},
-		{ID: "flow_callback", Title: db.ButtonLabel("flow_callback", "📞 Book Callback")},
-	}
-
-	sendInteractiveButtons(phone, greeting, buttons)
 }

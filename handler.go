@@ -87,7 +87,7 @@ var tempCallbacks = map[string]string{}
 
 // stateMu guards every package-level conversation map in this program:
 // sessions, tempQuotes, tempLeads and tempCallbacks here, internalSessions in
-// internal.go, and pendingMessages and quizSessionStore in automation.go.
+// internal.go, and pendingMessages in automation.go.
 //
 // webhook.go starts a fresh goroutine per inbound message, and those maps were
 // read and written with no synchronisation at all. Concurrent map access is a
@@ -194,7 +194,7 @@ func handleMessage(phone, input string, lat, lng float64) {
 		return
 	}
 
-	// ── Priority 2: Automation Modules (Quiz → FAQ → Query) ──────────────────
+	// ── Priority 2: Automation Modules (FAQ → Query) ─────────────────────────
 	if tryAutomationModules(phone, input) {
 		return
 	}
