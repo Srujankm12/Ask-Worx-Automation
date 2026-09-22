@@ -141,16 +141,10 @@ func main() {
 	r.Post("/api/login", AuthHandler)
 	r.Mount("/api", AdminRoutes())
 
-	// Serve the built panel, falling back to index.html so client-side routes
-	// resolve on a hard refresh.
-	fs := http.FileServer(http.Dir("./admin-frontend/dist"))
-	r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := os.Stat("admin-frontend/dist" + r.URL.Path); os.IsNotExist(err) {
-			http.ServeFile(w, r, "admin-frontend/dist/index.html")
-			return
-		}
-		fs.ServeHTTP(w, r)
-	}))
+	// No static file serving here any more. The panel is its own deployment
+	// (Vercel, from Ask-Worx-ADmin-panel) and talks to this service over the
+	// API, so the in-repo copy it used to serve has been removed. Unknown
+	// paths now get chi's 404 instead of a stale index.html.
 
 	port := os.Getenv("PORT")
 	if port == "" {
