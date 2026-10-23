@@ -162,6 +162,37 @@ func GetPhonesInServiceWindow() ([]string, error) {
 	return phones, rows.Err()
 }
 
+// GetPhonesOutsideServiceWindow returns opted-in contacts who have not
+// messaged the bot in the last 24 hours: the ones only a paid template
+// message can reach. Together with GetPhonesInServiceWindow it covers every
+// subscribed contact exactly once.
+func GetPhonesOutsideServiceWindow() ([]string, error) {
+	rows, err := Pool.Query(context.Background(), `
+		SELECT c.phone
+		FROM contacts c
+		WHERE c.opt_out = FALSE
+		  AND NOT EXISTS (
+			SELECT 1 FROM messages_log m
+			WHERE RIGHT(m.phone, 10) = RIGHT(c.phone, 10)
+			  AND m.direction = 'incoming'
+			  AND m.sent_at > NOW() - INTERVAL '24 hours')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	phones := []string{}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			log.Printf("[db] %s: skipping unreadable row: %v", "db/messages.go", err)
+			continue
+		}
+		phones = append(phones, p)
+	}
+	return phones, rows.Err()
+}
+
 // IsInServiceWindow reports whether phone has messaged the bot in the last 24
 // hours, which is when a free-form reply can still be delivered.
 func IsInServiceWindow(phone string) (bool, error) {

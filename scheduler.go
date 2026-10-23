@@ -156,11 +156,15 @@ func InitScheduler() {
 			// With nobody in the window the campaign is still marked sent, to
 			// 0. Leaving it due would fire it at whatever minute the next
 			// person happened to message, to that one person.
+			sent := 0
 			if len(phones) > 0 {
-				broadcastPoster(camp, phones)
+				sent = broadcastPoster(camp, phones)
+			}
+			if camp.TemplateName != "" {
+				sent += broadcastTemplate(camp)
 			}
 
-			if err := db.MarkCampaignSent(camp.ID, len(phones)); err != nil {
+			if err := db.MarkCampaignSent(camp.ID, sent); err != nil {
 				log.Printf("[Scheduler] Campaign #%d was sent but could not be marked sent: %v", camp.ID, err)
 			}
 		}
@@ -174,7 +178,8 @@ func InitScheduler() {
 
 // Removed duplicate sendMorningCheckIn (now in internal.go)
 
-func broadcastPoster(camp db.Campaign, phones []string) {
+// posterImageURL is the address Meta fetches the poster image from.
+func posterImageURL(camp db.Campaign) string {
 	publicURL := os.Getenv("PUBLIC_URL")
 	actualImageURL := camp.ImageURL
 
@@ -184,6 +189,17 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 		actualImageURL = fmt.Sprintf("%s/uploads/%s", publicURL, filename)
 		log.Printf("[Scheduler] Local image detected. Rewriting to public: %s", actualImageURL)
 	}
+	return actualImageURL
+}
+
+// posterButtonAction is what the poster's one button does: about_askworx is
+// an action the bot already answers (handler.go).
+const posterButtonAction = "about_askworx"
+
+// broadcastPoster sends the free message to contacts inside the window and
+// returns how many Meta accepted.
+func broadcastPoster(camp db.Campaign, phones []string) int {
+	actualImageURL := posterImageURL(camp)
 
 	// The image carries the message; the caption is just what was typed in the
 	// panel, followed by how to get in touch. No banner heading, no rule
@@ -222,12 +238,48 @@ func broadcastPoster(camp db.Campaign, phones []string) {
 	// text on purpose — no icon — and editable from settings.
 	buttons := []Button{
 		{
-			ID:    "about_askworx",
+			ID:    posterButtonAction,
 			Title: db.SettingOr("poster_button", fmt.Sprintf("About %s", os.Getenv("COMPANY_NAME"))),
 		},
 	}
 
+	sent := 0
 	for _, phone := range phones {
-		sendImageWithButtons(phone, actualImageURL, caption, buttons)
+		if sendImageWithButtons(phone, actualImageURL, caption, buttons) {
+			sent++
+		}
 	}
+	return sent
+}
+
+// broadcastTemplate sends the broadcast's marketing template to subscribed
+// contacts outside the 24-hour window, the ones the free message cannot
+// reach, and returns how many Meta accepted. Each one is billed by Meta.
+func broadcastTemplate(camp db.Campaign) int {
+	t, err := findTemplate(camp.TemplateName, camp.TemplateLang)
+	if err == nil {
+		if problem := templateProblem(t); problem != "" {
+			err = fmt.Errorf("template %q cannot be sent: %s", t.Name, problem)
+		}
+	}
+	if err != nil {
+		log.Printf("❌ [Scheduler] Campaign #%d: no template messages sent: %v", camp.ID, err)
+		return 0
+	}
+
+	phones, err := db.GetPhonesOutsideServiceWindow()
+	if err != nil {
+		log.Printf("❌ [Scheduler] Campaign #%d: could not list contacts for the template: %v", camp.ID, err)
+		return 0
+	}
+	log.Printf("[Scheduler] Campaign #%d: sending template %q to %d contacts outside the 24h window", camp.ID, t.Name, len(phones))
+
+	image := posterImageURL(camp)
+	sent := 0
+	for _, phone := range phones {
+		if sendTemplate(phone, t, image, []string{posterButtonAction}) {
+			sent++
+		}
+	}
+	return sent
 }

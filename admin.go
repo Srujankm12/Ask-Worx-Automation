@@ -54,6 +54,8 @@ func parseCampaignMultipart(w http.ResponseWriter, r *http.Request, c *db.Campai
 	c.Title = r.FormValue("title")
 	c.Description = r.FormValue("description")
 	c.Links = r.FormValue("links")
+	c.TemplateName = r.FormValue("template_name")
+	c.TemplateLang = r.FormValue("template_lang")
 
 	if scheduledAt := r.FormValue("scheduled_at"); scheduledAt != "" {
 		t, err := time.Parse(time.RFC3339, scheduledAt)
@@ -292,6 +294,30 @@ func AdminRoutes() chi.Router {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	r.Post("/contacts/subscribe-all", func(w http.ResponseWriter, r *http.Request) {
+		updated, err := db.UpdateAllContactsOptOut(false)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Updated int64 `json:"updated"`
+		}{Updated: updated})
+	})
+
+	r.Post("/contacts/unsubscribe-all", func(w http.ResponseWriter, r *http.Request) {
+		updated, err := db.UpdateAllContactsOptOut(true)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Updated int64 `json:"updated"`
+		}{Updated: updated})
+	})
+
 	r.Post("/contacts/{id}/opt-out", func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		var id int
@@ -433,6 +459,20 @@ func AdminRoutes() chi.Router {
 			writeJSONError(w, http.StatusBadRequest, "scheduled_at is required")
 			return
 		}
+		// Check the template now: found missing at send time, the paid half
+		// of the broadcast would quietly go to nobody.
+		c.TemplateName, c.TemplateLang = strings.TrimSpace(c.TemplateName), strings.TrimSpace(c.TemplateLang)
+		if c.TemplateName != "" {
+			t, err := findTemplate(c.TemplateName, c.TemplateLang)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if problem := templateProblem(t); problem != "" {
+				writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("template %q cannot be used: %s", t.Name, problem))
+				return
+			}
+		}
 
 		id, err := db.CreateCampaign(c, imageData)
 		if err != nil {
@@ -455,6 +495,8 @@ func AdminRoutes() chi.Router {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]int{"id": id})
 	})
+
+	r.Get("/whatsapp-templates", templatesHandler)
 
 	r.Delete("/campaigns/{id}", func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")

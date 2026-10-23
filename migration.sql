@@ -75,6 +75,12 @@ ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_type VARCHAR(50) DEFAULT ''
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_size INTEGER DEFAULT 0;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS image_data BYTEA;
 
+-- An approved WhatsApp marketing template to send to subscribed contacts
+-- outside the free 24-hour window. NULL means the broadcast goes only to those
+-- inside it. Meta charges for each template message delivered.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS template_name VARCHAR;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS template_lang VARCHAR;
+
 -- The closing lines under a poster's text. Empty means fall back to the
 -- website and email in settings, so most broadcasts need not think about it.
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS links TEXT DEFAULT '';

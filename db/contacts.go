@@ -41,6 +41,20 @@ func UpdateContactOptOutByPhone(phone string, optOut bool) error {
 	return err
 }
 
+// UpdateAllContactsOptOut sets opt_out on every contact that does not already
+// match, backing both "Subscribe all" and "Unsubscribe all". It reports how
+// many rows actually changed, so the caller can say "12 contacts" rather than
+// claiming to have touched everyone regardless of their starting state.
+func UpdateAllContactsOptOut(optOut bool) (int64, error) {
+	tag, err := Pool.Exec(context.Background(),
+		"UPDATE contacts SET opt_out = $1 WHERE opt_out != $1",
+		optOut)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func DeleteContact(id int) error {
 	_, err := Pool.Exec(context.Background(),
 		"DELETE FROM contacts WHERE id = $1",

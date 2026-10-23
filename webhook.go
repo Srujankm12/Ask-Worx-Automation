@@ -68,6 +68,11 @@ type WebhookRequest struct {
 					Text *struct {
 						Body string `json:"body"`
 					} `json:"text,omitempty"`
+					// A tap on a template's quick-reply button.
+					Button *struct {
+						Payload string `json:"payload"`
+						Text    string `json:"text"`
+					} `json:"button,omitempty"`
 					Interactive *struct {
 						ButtonReply struct {
 							ID    string `json:"id"`
@@ -168,6 +173,13 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 						text = msg.Text.Body
 					} else if msg.Interactive != nil {
 						text = msg.Interactive.ButtonReply.ID
+					} else if msg.Button != nil {
+						// The payload is the action the broadcaster gave the
+						// button; without one, the button's own words.
+						text = msg.Button.Payload
+						if text == "" {
+							text = msg.Button.Text
+						}
 					} else {
 						text = "[" + strings.ToUpper(msg.Type) + "_RECEIVED]"
 					}
