@@ -21,11 +21,13 @@ import (
 
 // MetaTemplate is a message template as Meta's API describes it.
 type MetaTemplate struct {
-	Name       string              `json:"name"`
-	Language   string              `json:"language"`
-	Category   string              `json:"category"`
-	Status     string              `json:"status"`
-	Components []TemplateComponent `json:"components"`
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Language       string              `json:"language"`
+	Category       string              `json:"category"`
+	Status         string              `json:"status"`
+	RejectedReason string              `json:"rejected_reason"`
+	Components     []TemplateComponent `json:"components"`
 }
 
 type TemplateComponent struct {
@@ -105,7 +107,7 @@ func fetchTemplates() ([]MetaTemplate, error) {
 		return nil, fmt.Errorf("WABA_ID is not set, so the bot cannot read your WhatsApp templates")
 	}
 	q := url.Values{
-		"fields":   {"name,language,category,status,components"},
+		"fields":   {"id,name,language,category,status,rejected_reason,components"},
 		"category": {"MARKETING"},
 		"limit":    {"100"},
 	}
