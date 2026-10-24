@@ -35,6 +35,10 @@ type TemplateComponent struct {
 	Format  string           `json:"format"` // header only: TEXT | IMAGE | VIDEO | DOCUMENT | LOCATION
 	Text    string           `json:"text"`
 	Buttons []TemplateButton `json:"buttons"`
+	// The sample Meta's reviewers saw; for an image header, a link to it.
+	Example *struct {
+		HeaderHandle []string `json:"header_handle"`
+	} `json:"example,omitempty"`
 }
 
 type TemplateButton struct {
