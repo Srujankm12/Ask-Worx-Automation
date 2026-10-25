@@ -156,7 +156,7 @@ func findTemplate(name, lang string) (MetaTemplate, error) {
 // An image header carries the poster image. Quick-reply buttons are given
 // actions in order, so a tap does what the same button does on the free
 // message.
-func sendTemplate(to string, t MetaTemplate, imageURL string, actions []string) bool {
+func sendTemplate(to string, t MetaTemplate, imageURL string, actions []string) metaResult {
 	payload := map[string]interface{}{
 		"messaging_product": "whatsapp",
 		"recipient_type":    "individual",
@@ -168,7 +168,7 @@ func sendTemplate(to string, t MetaTemplate, imageURL string, actions []string) 
 	if c, ok := t.component("BODY"); ok {
 		body = c.Text
 	}
-	return sendToMeta(payload, to, "[Template: "+t.Name+"] "+body)
+	return sendToMetaResult(payload, to, "[Template: "+t.Name+"] "+body)
 }
 
 // templateMessage is the "template" object of a send: the template's name and

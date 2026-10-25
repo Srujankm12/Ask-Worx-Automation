@@ -56,6 +56,14 @@ func parseCampaignMultipart(w http.ResponseWriter, r *http.Request, c *db.Campai
 	c.Links = r.FormValue("links")
 	c.TemplateName = r.FormValue("template_name")
 	c.TemplateLang = r.FormValue("template_lang")
+	if raw := strings.TrimSpace(r.FormValue("max_paid")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "max_paid must be a whole number.")
+			return nil, false
+		}
+		c.MaxPaid = n
+	}
 
 	if scheduledAt := r.FormValue("scheduled_at"); scheduledAt != "" {
 		t, err := time.Parse(time.RFC3339, scheduledAt)
@@ -116,6 +124,15 @@ func parseCampaignMultipart(w http.ResponseWriter, r *http.Request, c *db.Campai
 	c.ImageType = sniffed
 	c.ImageSize = int64(len(data))
 	return data, true
+}
+
+// retryPreview is who a retry of camp would go to if it were sent now.
+func retryPreview(camp db.Campaign) (free, paid []string, err error) {
+	inWindow, err := db.GetPhonesInServiceWindow()
+	if err != nil {
+		return nil, nil, err
+	}
+	return retryAudience(db.Campaign{RetryOf: camp.ID, TemplateName: camp.TemplateName}, inWindow)
 }
 
 func AdminRoutes() chi.Router {
@@ -421,6 +438,21 @@ func AdminRoutes() chi.Router {
 			return
 		}
 		count, _ := db.GetTotalCampaignsCount(start, end)
+		ids := make([]int, 0, len(campaigns))
+		for _, c := range campaigns {
+			ids = append(ids, c.ID)
+		}
+		// Without the counts the list still works; the report just shows
+		// nothing for these rows.
+		if delivery, err := db.GetDeliveryCounts(ids); err == nil {
+			for i := range campaigns {
+				if d, ok := delivery[campaigns[i].ID]; ok {
+					campaigns[i].Delivery = &d
+				}
+			}
+		} else {
+			log.Printf("[Campaigns] could not read delivery counts: %v", err)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"data": campaigns, "total": count})
 	})
@@ -457,6 +489,11 @@ func AdminRoutes() chi.Router {
 		}
 		if c.ScheduledAt.IsZero() {
 			writeJSONError(w, http.StatusBadRequest, "scheduled_at is required")
+			return
+		}
+		c.RetryOf = 0 // only the retry route makes retries
+		if c.MaxPaid < 0 {
+			writeJSONError(w, http.StatusBadRequest, "max_paid cannot be negative")
 			return
 		}
 		// Check the template now: found missing at send time, the paid half
@@ -509,6 +546,132 @@ func AdminRoutes() chi.Router {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+	})
+
+	// Who a broadcast reached and who it did not, and how many a retry would
+	// try again: free inside the 24-hour window, as the template outside it.
+	r.Get("/campaigns/{id}/recipients", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.Atoi(chi.URLParam(r, "id"))
+		camp, err := db.GetCampaign(id)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, "broadcast not found")
+			return
+		}
+		list, err := db.GetRecipients(id)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		free, paid, err := retryPreview(camp)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		pending, _ := db.PendingRetry(id)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data":  list,
+			"retry": map[string]interface{}{"free": len(free), "paid": len(paid), "pending": pending},
+			"limit": messagingLimit(),
+			"rate":  billing(false).Rate,
+		})
+	})
+
+	// Sends the broadcast again to the contacts it failed to reach, now.
+	r.Post("/campaigns/{id}/retry", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.Atoi(chi.URLParam(r, "id"))
+		camp, err := db.GetCampaign(id)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, "broadcast not found")
+			return
+		}
+		if camp.Type != "poster" || camp.Status != "sent" {
+			writeJSONError(w, http.StatusBadRequest, "only a broadcast that has been sent can be retried")
+			return
+		}
+		if pending, err := db.PendingRetry(id); err != nil || pending {
+			writeJSONError(w, http.StatusConflict, "a retry of this broadcast is already going out")
+			return
+		}
+		free, paid, err := retryPreview(camp)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if len(free)+len(paid) == 0 {
+			writeJSONError(w, http.StatusBadRequest, "nobody this broadcast missed can be reached again right now")
+			return
+		}
+		if camp.TemplateName != "" && len(paid) > 0 {
+			t, err := findTemplate(camp.TemplateName, camp.TemplateLang)
+			if err == nil {
+				if problem := templateProblem(t); problem != "" {
+					err = fmt.Errorf("template %q cannot be used: %s", t.Name, problem)
+				}
+			}
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
+		// The image stays where the original's points: a stored image is
+		// served from the original's /image route, which keeps working.
+		retry := camp
+		retry.ID = 0
+		retry.RetryOf = camp.ID
+		retry.MaxPaid = 0 // the daily limit still applies
+		retry.ScheduledAt = time.Now()
+		newID, err := db.CreateCampaign(retry, nil)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		go sendDueCampaigns()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"id": newID, "free": len(free), "paid": len(paid)})
+	})
+
+	// What WhatsApp has charged, the price of a paid message, and the
+	// balance left as far as the panel can tell.
+	r.Get("/billing", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(billing(r.URL.Query().Get("fresh") == "1"))
+	})
+
+	// Records the balance as read off WhatsApp Manager now.
+	r.Post("/billing/balance", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Amount *float64 `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Amount == nil || *body.Amount < 0 {
+			writeJSONError(w, http.StatusBadRequest, "amount must be a number, 0 or more")
+			return
+		}
+		if err := setBalance(*body.Amount); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(billing(true))
+	})
+
+	// The paid-message limit, for the Broadcasts page and the composer.
+	r.Get("/messaging-limit", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(messagingLimit())
+	})
+
+	// Every contact with the last broadcast they were sent, to follow who got
+	// what and who has not had one yet.
+	r.Get("/offer-contacts", func(w http.ResponseWriter, r *http.Request) {
+		list, err := db.GetOfferContacts()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": list})
 	})
 
 	// Serves a poster's image straight out of the database. Public (see

@@ -85,6 +85,12 @@ func sendInteractiveButtons(to, bodyText string, buttons []Button) {
 }
 
 func sendImageWithButtons(to, imageURL, bodyText string, buttons []Button) bool {
+	return sendImageWithButtonsResult(to, imageURL, bodyText, buttons).OK()
+}
+
+// sendImageWithButtonsResult is sendImageWithButtons for a broadcast, which
+// keeps Meta's message ID to follow the delivery.
+func sendImageWithButtonsResult(to, imageURL, bodyText string, buttons []Button) metaResult {
 	var waButtons []map[string]interface{}
 	for _, b := range buttons {
 		title := b.Title
@@ -120,11 +126,25 @@ func sendImageWithButtons(to, imageURL, bodyText string, buttons []Button) bool 
 			},
 		},
 	}
-	return sendToMeta(payload, to, "[Image: "+imageURL+"] "+bodyText)
+	return sendToMetaResult(payload, to, "[Image: "+imageURL+"] "+bodyText)
 }
+
+// metaResult is Meta's answer to one send: the message ID it accepted the
+// message under, or why it refused it.
+type metaResult struct {
+	ID        string
+	ErrorCode int
+	Error     string
+}
+
+func (r metaResult) OK() bool { return r.ID != "" }
 
 // sendToMeta reports whether Meta accepted the message.
 func sendToMeta(payload map[string]interface{}, to, logMsg string) bool {
+	return sendToMetaResult(payload, to, logMsg).OK()
+}
+
+func sendToMetaResult(payload map[string]interface{}, to, logMsg string) metaResult {
 	url := fmt.Sprintf("https://graph.facebook.com/v17.0/%s/messages", os.Getenv("PHONE_NUMBER_ID"))
 	token := os.Getenv("ACCESS_TOKEN")
 
@@ -147,20 +167,49 @@ func sendToMeta(payload map[string]interface{}, to, logMsg string) bool {
 	resp, err := metaClient.Do(req)
 	if err != nil {
 		log.Println("Error sending to Meta:", err)
-		return false
+		return metaResult{Error: "Could not reach WhatsApp: " + err.Error()}
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	var answer struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+		Error struct {
+			Code      int    `json:"code"`
+			Message   string `json:"message"`
+			ErrorData struct {
+				Details string `json:"details"`
+			} `json:"error_data"`
+		} `json:"error"`
+	}
+	json.Unmarshal(bodyBytes, &answer)
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ Meta API Error (Status %d): %s\n", resp.StatusCode, string(bodyBytes))
 		log.Printf("❌ Failed Payload: %s\n", string(jsonPayload))
-		return false
+		reason := answer.Error.ErrorData.Details
+		if reason == "" {
+			reason = answer.Error.Message
+		}
+		if reason == "" {
+			reason = fmt.Sprintf("WhatsApp refused the message (HTTP %d)", resp.StatusCode)
+		}
+		return metaResult{ErrorCode: answer.Error.Code, Error: reason}
 	}
 
+	id := ""
+	if len(answer.Messages) > 0 {
+		id = answer.Messages[0].ID
+	}
+	if id == "" {
+		// Accepted, but with no ID to follow it by. Still a send.
+		id = fmt.Sprintf("unknown-%d", time.Now().UnixNano())
+	}
 	db.LogMessage(to, "outgoing", logMsg)
 	log.Printf("✅ Meta Success! Message sent to %s: %s\n", to, logMsg)
-	return true
+	return metaResult{ID: id}
 }
 
 func createCleanID(text string) string {

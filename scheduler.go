@@ -120,55 +120,7 @@ func InitScheduler() {
 	}
 
 	// ── Every minute: check for due campaigns and broadcast ──────────────────
-	_, err = c.AddFunc("* * * * *", func() {
-		campaigns, err := db.GetDueCampaigns()
-		if err != nil {
-			log.Println("[Scheduler] Error fetching due campaigns:", err)
-			return
-		}
-		if len(campaigns) == 0 {
-			return
-		}
-
-		// Only contacts inside the 24h window: campaigns are not templates, so
-		// Meta rejects them for everyone else.
-		phones, err := db.GetPhonesInServiceWindow()
-		if err != nil {
-			log.Println("[Scheduler] Error fetching campaign recipients:", err)
-			return
-		}
-
-		for _, camp := range campaigns {
-			// Claim it first. Sending takes longer than the one-minute tick,
-			// so without this the next run picks the same row up and
-			// broadcasts the whole campaign again.
-			claimed, err := db.ClaimCampaign(camp.ID)
-			if err != nil {
-				log.Printf("[Scheduler] Could not claim campaign #%d, skipping: %v", camp.ID, err)
-				continue
-			}
-			if !claimed {
-				continue
-			}
-
-			log.Printf("[Scheduler] Broadcasting campaign #%d (%s) to %d contacts in the 24h window", camp.ID, camp.Type, len(phones))
-
-			// With nobody in the window the campaign is still marked sent, to
-			// 0. Leaving it due would fire it at whatever minute the next
-			// person happened to message, to that one person.
-			sent := 0
-			if len(phones) > 0 {
-				sent = broadcastPoster(camp, phones)
-			}
-			if camp.TemplateName != "" {
-				sent += broadcastTemplate(camp)
-			}
-
-			if err := db.MarkCampaignSent(camp.ID, sent); err != nil {
-				log.Printf("[Scheduler] Campaign #%d was sent but could not be marked sent: %v", camp.ID, err)
-			}
-		}
-	})
+	_, err = c.AddFunc("* * * * *", sendDueCampaigns)
 	if err != nil {
 		log.Println("Error scheduling campaign broadcaster:", err)
 	}
@@ -177,6 +129,122 @@ func InitScheduler() {
 }
 
 // Removed duplicate sendMorningCheckIn (now in internal.go)
+
+// sendDueCampaigns broadcasts every campaign whose time has come: free to
+// contacts inside the 24-hour window, and as the paid template to the rest
+// when the campaign has one. A retry goes only to the contacts the campaign
+// it retries failed to reach.
+func sendDueCampaigns() {
+	campaigns, err := db.GetDueCampaigns()
+	if err != nil {
+		log.Println("[Scheduler] Error fetching due campaigns:", err)
+		return
+	}
+	if len(campaigns) == 0 {
+		return
+	}
+
+	// Only contacts inside the 24h window: campaigns are not templates, so
+	// Meta rejects them for everyone else.
+	phones, err := db.GetPhonesInServiceWindow()
+	if err != nil {
+		log.Println("[Scheduler] Error fetching campaign recipients:", err)
+		return
+	}
+
+	for _, camp := range campaigns {
+		// Claim it first. Sending takes longer than the one-minute tick,
+		// so without this the next run picks the same row up and
+		// broadcasts the whole campaign again.
+		claimed, err := db.ClaimCampaign(camp.ID)
+		if err != nil {
+			log.Printf("[Scheduler] Could not claim campaign #%d, skipping: %v", camp.ID, err)
+			continue
+		}
+		if !claimed {
+			continue
+		}
+
+		free, paid := phones, []string(nil)
+		if camp.RetryOf > 0 {
+			free, paid, err = retryAudience(camp, phones)
+			if err != nil {
+				log.Printf("❌ [Scheduler] Campaign #%d: could not list who to retry: %v", camp.ID, err)
+			}
+		} else if camp.TemplateName != "" {
+			paid, err = db.GetPhonesOutsideServiceWindow()
+			if err != nil {
+				log.Printf("❌ [Scheduler] Campaign #%d: could not list contacts for the template: %v", camp.ID, err)
+			}
+		}
+
+		log.Printf("[Scheduler] Broadcasting campaign #%d (%s) to %d contacts in the 24h window", camp.ID, camp.Type, len(free))
+
+		// With nobody in the window the campaign is still marked sent, to
+		// 0. Leaving it due would fire it at whatever minute the next
+		// person happened to message, to that one person.
+		sent := 0
+		if len(free) > 0 {
+			sent = broadcastPoster(camp, free)
+		}
+		if camp.TemplateName != "" && len(paid) > 0 {
+			// Past the daily limit Meta drops the messages anyway; held back
+			// they show in the report and a retry sends them later.
+			send, held, reason := capPaid(paid, camp.MaxPaid)
+			if len(held) > 0 {
+				log.Printf("[Scheduler] Campaign #%d: holding back %d paid sends: %s", camp.ID, len(held), reason)
+			}
+			for _, phone := range held {
+				if err := db.RecordSkipped(camp.ID, phone, "template", reason); err != nil {
+					log.Printf("[Scheduler] Campaign #%d: could not record %s as held back: %v", camp.ID, phone, err)
+				}
+			}
+			sent += broadcastTemplate(camp, send)
+		}
+
+		if err := db.MarkCampaignSent(camp.ID, sent); err != nil {
+			log.Printf("[Scheduler] Campaign #%d was sent but could not be marked sent: %v", camp.ID, err)
+		}
+	}
+}
+
+// recordSend notes one broadcast send for the delivery report and reports
+// whether Meta accepted it.
+func recordSend(campaignID int, phone, channel string, res metaResult) bool {
+	if err := db.RecordRecipient(campaignID, phone, channel, res.ID, res.ErrorCode, res.Error); err != nil {
+		log.Printf("[Scheduler] Campaign #%d: could not record the send to %s: %v", campaignID, phone, err)
+	}
+	return res.OK()
+}
+
+// retryAudience splits the contacts the original campaign failed to reach
+// into those the free message can reach now and those only the template
+// can. Without a template, the second group cannot be reached and is left.
+func retryAudience(camp db.Campaign, inWindow []string) (free, paid []string, err error) {
+	failed, err := db.GetRetryPhones(camp.RetryOf)
+	if err != nil {
+		return nil, nil, err
+	}
+	open := map[string]bool{}
+	for _, p := range inWindow {
+		open[lastTen(p)] = true
+	}
+	for _, p := range failed {
+		if open[lastTen(p)] {
+			free = append(free, p)
+		} else if camp.TemplateName != "" {
+			paid = append(paid, p)
+		}
+	}
+	return free, paid, nil
+}
+
+func lastTen(phone string) string {
+	if len(phone) > 10 {
+		return phone[len(phone)-10:]
+	}
+	return phone
+}
 
 // posterImageURL is the address Meta fetches the poster image from.
 func posterImageURL(camp db.Campaign) string {
@@ -245,17 +313,17 @@ func broadcastPoster(camp db.Campaign, phones []string) int {
 
 	sent := 0
 	for _, phone := range phones {
-		if sendImageWithButtons(phone, actualImageURL, caption, buttons) {
+		if recordSend(camp.ID, phone, "free", sendImageWithButtonsResult(phone, actualImageURL, caption, buttons)) {
 			sent++
 		}
 	}
 	return sent
 }
 
-// broadcastTemplate sends the broadcast's marketing template to subscribed
-// contacts outside the 24-hour window, the ones the free message cannot
-// reach, and returns how many Meta accepted. Each one is billed by Meta.
-func broadcastTemplate(camp db.Campaign) int {
+// broadcastTemplate sends the broadcast's marketing template to the given
+// contacts, ones outside the 24-hour window that the free message cannot
+// reach, and returns how many Meta accepted. Each one delivered is billed.
+func broadcastTemplate(camp db.Campaign, phones []string) int {
 	t, err := findTemplate(camp.TemplateName, camp.TemplateLang)
 	if err == nil {
 		if problem := templateProblem(t); problem != "" {
@@ -264,12 +332,11 @@ func broadcastTemplate(camp db.Campaign) int {
 	}
 	if err != nil {
 		log.Printf("❌ [Scheduler] Campaign #%d: no template messages sent: %v", camp.ID, err)
-		return 0
-	}
-
-	phones, err := db.GetPhonesOutsideServiceWindow()
-	if err != nil {
-		log.Printf("❌ [Scheduler] Campaign #%d: could not list contacts for the template: %v", camp.ID, err)
+		// Listed as failed, so the report shows them and a retry can reach
+		// them once the template is fixed.
+		for _, phone := range phones {
+			recordSend(camp.ID, phone, "template", metaResult{Error: err.Error()})
+		}
 		return 0
 	}
 	log.Printf("[Scheduler] Campaign #%d: sending template %q to %d contacts outside the 24h window", camp.ID, t.Name, len(phones))
@@ -277,7 +344,7 @@ func broadcastTemplate(camp db.Campaign) int {
 	image := posterImageURL(camp)
 	sent := 0
 	for _, phone := range phones {
-		if sendTemplate(phone, t, image, []string{posterButtonAction}) {
+		if recordSend(camp.ID, phone, "template", sendTemplate(phone, t, image, []string{posterButtonAction})) {
 			sent++
 		}
 	}
