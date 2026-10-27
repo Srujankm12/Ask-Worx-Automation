@@ -171,6 +171,37 @@ func sendTemplate(to string, t MetaTemplate, imageURL string, actions []string) 
 	return sendToMetaResult(payload, to, "[Template: "+t.Name+"] "+body)
 }
 
+// quickReplyActions gives each of t's quick-reply buttons the action a tap
+// should take: a button that says to stop messages opts the person out, and
+// any other does what the poster's button does. Without this only the first
+// button had an action, so tapping "Stop messages" on a template came back as
+// those words and opted nobody out.
+func quickReplyActions(t MetaTemplate) []string {
+	var actions []string
+	if b, ok := t.component("BUTTONS"); ok {
+		for _, btn := range b.Buttons {
+			if btn.Type != "QUICK_REPLY" {
+				continue
+			}
+			if isOptOut(strings.ToLower(btn.Text)) {
+				actions = append(actions, "opt_out")
+			} else {
+				actions = append(actions, posterButtonAction)
+			}
+		}
+	}
+	return actions
+}
+
+// sampleImage is the picture Meta's reviewers saw in t's image header, which
+// a send to one contact uses since there is no poster to take one from.
+func sampleImage(t MetaTemplate) string {
+	if h, ok := t.component("HEADER"); ok && h.Example != nil && len(h.Example.HeaderHandle) > 0 {
+		return h.Example.HeaderHandle[0]
+	}
+	return ""
+}
+
 // templateMessage is the "template" object of a send: the template's name and
 // language, and the values its image header and quick-reply buttons take.
 func templateMessage(t MetaTemplate, imageURL string, actions []string) map[string]interface{} {

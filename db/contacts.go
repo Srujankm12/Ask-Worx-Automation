@@ -2,8 +2,11 @@ package db
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func SaveContact(phone string, name string) error {
@@ -53,6 +56,18 @@ func UpdateAllContactsOptOut(optOut bool) (int64, error) {
 		return 0, err
 	}
 	return tag.RowsAffected(), nil
+}
+
+// IsOptedOut reports whether the contact asked to stop the bot's messages.
+// A phone that is not a contact has not.
+func IsOptedOut(phone string) (bool, error) {
+	var optOut bool
+	err := Pool.QueryRow(context.Background(),
+		"SELECT opt_out FROM contacts WHERE phone = $1", phone).Scan(&optOut)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return optOut, err
 }
 
 func DeleteContact(id int) error {

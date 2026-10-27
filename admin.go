@@ -428,6 +428,45 @@ func AdminRoutes() chi.Router {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// A template to one contact, to follow up once the 24-hour window has
+	// closed and a free reply would not be delivered. Meta charges for it.
+	r.Post("/send-template", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Phone    string `json:"phone"`
+			Name     string `json:"name"`
+			Language string `json:"language"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+			strings.TrimSpace(body.Phone) == "" || body.Name == "" || body.Language == "" {
+			writeJSONError(w, http.StatusBadRequest, "A phone number and a template are both needed.")
+			return
+		}
+		optedOut, err := db.IsOptedOut(body.Phone)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Could not check whether this contact can be messaged.")
+			return
+		}
+		if optedOut {
+			writeJSONError(w, http.StatusConflict,
+				"This contact asked to stop receiving messages, so nothing was sent.")
+			return
+		}
+		t, err := findTemplate(body.Name, body.Language)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if problem := templateProblem(t); problem != "" {
+			writeJSONError(w, http.StatusBadRequest, "This template cannot be sent: "+problem+".")
+			return
+		}
+		if res := sendTemplate(body.Phone, t, sampleImage(t), quickReplyActions(t)); !res.OK() {
+			writeJSONError(w, http.StatusBadGateway, "WhatsApp did not accept the template: "+res.Error)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// ── Campaign Management ─────────────────────────────────────────────────
 
 	r.Get("/campaigns", func(w http.ResponseWriter, r *http.Request) {

@@ -315,7 +315,7 @@ func broadcastTemplate(camp db.Campaign, phones []string) int {
 	image := posterImageURL(camp)
 	sent := 0
 	for _, phone := range phones {
-		if recordSend(camp.ID, phone, "template", sendTemplate(phone, t, image, []string{posterButtonAction})) {
+		if recordSend(camp.ID, phone, "template", sendTemplate(phone, t, image, quickReplyActions(t))) {
 			sent++
 		}
 	}

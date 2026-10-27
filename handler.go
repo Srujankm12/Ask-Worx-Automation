@@ -106,6 +106,17 @@ var tempCallbacks = map[string]string{}
 // roughly ninety call sites and does not belong in a same-night patch.
 var stateMu sync.Mutex
 
+// isOptOut reports whether a message asks to stop the bot's messages. A
+// template's "Stop messages" button that was sent without an action comes
+// back as its own words, so those count as well as a typed "stop".
+func isOptOut(text string) bool {
+	switch strings.Trim(text, " .!🛑") {
+	case "stop", "stop messages", "stop message", "stop promotions", "unsubscribe", "opt out", "opt-out":
+		return true
+	}
+	return false
+}
+
 func handleMessage(phone, input string, lat, lng float64) {
 	stateMu.Lock()
 	defer stateMu.Unlock()
@@ -113,7 +124,7 @@ func handleMessage(phone, input string, lat, lng float64) {
 	text := strings.ToLower(strings.TrimSpace(input))
 	db.SaveContact(phone, "")
 
-	if text == "stop" || input == "opt_out" {
+	if isOptOut(text) || input == "opt_out" {
 		db.UpdateContactOptOutByPhone(phone, true)
 		sendTextMessage(phone, "✅ You have successfully opted out of our automated broadcasts and daily messages. If you ever need assistance, you can always type 'hi' or 'menu'.")
 		return
