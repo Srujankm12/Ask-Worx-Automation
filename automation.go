@@ -77,6 +77,14 @@ func handleQueryCategoryReply(phone, upper, rawInput string) {
 		return
 	}
 
+	// A quote needs to know who is asking, so it goes through the quote flow,
+	// which asks for the name and company and saves them to the contact.
+	if strings.ToLower(rawInput) == "quotation" {
+		delete(pendingMessages, phone)
+		startLeadQuoteFlow(phone)
+		return
+	}
+
 	originalMsg := pendingMessages[phone]
 
 	// Step 5: Store Query

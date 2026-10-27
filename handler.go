@@ -23,7 +23,6 @@ const (
 	StateSoftwareSub      SessionState = "software_sub"
 	StateWhatsAppBot      SessionState = "whatsapp_bot"
 	StateAppDev           SessionState = "app_dev"
-	StateSEO              SessionState = "seo"
 	StateIIoT             SessionState = "iiot"
 	StateIIoTGateway      SessionState = "iiot_gateway"
 	StateCloudAnalytics   SessionState = "cloud_analytics"
@@ -251,7 +250,7 @@ func handleMessage(phone, input string, lat, lng float64) {
 		handleSubIndustrialFlow(phone, text)
 	case StateSoftware:
 		handleSoftwareFlow(phone, text)
-	case StateSoftwareSub, StateWhatsAppBot, StateAppDev, StateSEO:
+	case StateSoftwareSub, StateWhatsAppBot, StateAppDev:
 		handleSubSoftwareFlow(phone, text)
 	case StateIIoT:
 		handleIIoTFlow(phone, text)
@@ -472,7 +471,6 @@ func sendSoftwareMenu(phone string) {
 	}
 	buttons := []Button{
 		{ID: "software_solutions", Title: db.ButtonLabel("software_solutions", "💻 Software Solutions")},
-		{ID: "seo_marketing", Title: db.ButtonLabel("seo_marketing", "📈 SEO & Marketing")},
 		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
 	}
 	sendImageWithButtons(phone, imageURL, body, buttons)
@@ -482,8 +480,6 @@ func handleSoftwareFlow(phone, text string) {
 	switch text {
 	case "software_solutions":
 		sendSoftwareSolutionMenu(phone)
-	case "seo_marketing":
-		sendSEODetails(phone)
 	case "main_menu":
 		sendOpeningMessage(phone)
 	default:
@@ -528,21 +524,9 @@ func sendWebAppDetails(phone string) {
 }
 
 func sendIndustrialSoftwareDetails(phone string) {
-	sessions[phone] = StateSoftware
+	sessions[phone] = StateSoftwareSub
 	imageURL := db.SettingOr("content_indsoftware_image", "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800")
 	body := renderTemplate(db.SettingOr("content_indsoftware_body", "⚙️ Industrial & ERP Software\nRobust backend systems to manage your shop floor and business.\n\n✅ Custom ERP & MES Systems\n✅ Real-time Inventory Tracking\n✅ Shop-floor Data Logging\n✅ Predictive Analytics Engines\n✅ Secure Cloud Dashboards\n✅ Desktop Process Monitors\n\nBridging the gap between machinery and business intelligence."), "")
-	buttons := []Button{
-		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
-		{ID: "seo_marketing", Title: db.ButtonLabel("seo_marketing", "📈 SEO & Marketing")},
-		{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
-	}
-	sendImageWithButtons(phone, imageURL, body, buttons)
-}
-
-func sendSEODetails(phone string) {
-	sessions[phone] = StateSEO
-	imageURL := db.SettingOr("content_seo_image", "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800")
-	body := renderTemplate(db.SettingOr("content_seo_body", "📈 Digital Marketing & SEO\nDominating search results and driving high-intent traffic.\n\n✅ Data-Driven SEO Strategies\n✅ ROI-Focused Google Ads (PPC)\n✅ LinkedIn B2B Lead Generation\n✅ Social Media Brand Positioning\n✅ Content Authority Building\n✅ Advanced Analytics & Tracking\n\nWe don't just get traffic; we get paying customers."), "")
 	buttons := []Button{
 		{ID: "get_free_quote", Title: db.ButtonLabel("get_free_quote", "💬 Get Free Quote")},
 		{ID: "back_to_software", Title: db.ButtonLabel("back_to_software", "🔙 Software Menu")},
@@ -561,8 +545,6 @@ func handleSubSoftwareFlow(phone, text string) {
 		sendWebAppDetails(phone)
 	case "industrial_sw":
 		sendIndustrialSoftwareDetails(phone)
-	case "seo_marketing":
-		sendSEODetails(phone)
 	case "back_to_software":
 		sendSoftwareSolutionMenu(phone)
 	case "main_menu":
@@ -741,7 +723,7 @@ func StartCategoryQueryFlow(phone, categoryID string) {
 	buttons := []Button{
 		{ID: "cat_automation", Title: db.ButtonLabel("cat_automation", "⚙️ Industrial Auto")},
 		{ID: "cat_app_dev", Title: db.ButtonLabel("cat_app_dev", "💻 Digital & Software")},
-		{ID: "cat_marketing", Title: db.ButtonLabel("cat_marketing", "📈 Digital Marketing")},
+		{ID: "cat_iiot", Title: db.ButtonLabel("cat_iiot", "📊 IIoT & Analytics")},
 	}
 	sendInteractiveButtons(phone, body, buttons)
 }
@@ -838,7 +820,7 @@ func startLeadServiceFlow(phone string) {
 	buttons := []Button{
 		{ID: "cat_automation", Title: db.ButtonLabel("cat_automation", "⚙️ Industrial Auto")},
 		{ID: "cat_app_dev", Title: db.ButtonLabel("cat_app_dev", "💻 Digital & Software")},
-		{ID: "cat_marketing", Title: db.ButtonLabel("cat_marketing", "📈 Digital Marketing")},
+		{ID: "cat_iiot", Title: db.ButtonLabel("cat_iiot", "📊 IIoT & Analytics")},
 	}
 	sendInteractiveButtons(phone, body, buttons)
 }
@@ -852,8 +834,8 @@ func handleLeadServiceCategory(phone, input string) {
 	if input == "cat_app_dev" {
 		interest = "Application & Software Development (CRM)"
 	}
-	if input == "cat_marketing" {
-		interest = "Digital Marketing & SEO"
+	if input == "cat_iiot" {
+		interest = "IIoT & Cloud Analytics"
 	}
 
 	tempLeads[phone].Interest = interest
@@ -924,8 +906,10 @@ func handleLeadQuoteName(phone, input string) {
 
 func handleLeadQuoteCompany(phone, input string) {
 	tempLeads[phone].Company = input
+	db.UpdateContactName(phone, tempLeads[phone].Name)
+	db.UpdateContactCompany(phone, input)
 	sessions[phone] = StateLeadQuoteInterest
-	body := "3. Area of Interest (e.g., Automation, Software, Marketing)"
+	body := "3. Area of Interest (e.g., Automation, Software, IIoT)"
 	sendTextMessage(phone, body)
 }
 
@@ -969,6 +953,8 @@ func handleLeadCallName(phone, input string) {
 
 func handleLeadCallCompany(phone, input string) {
 	tempLeads[phone].Company = input
+	db.UpdateContactName(phone, tempLeads[phone].Name)
+	db.UpdateContactCompany(phone, input)
 	sessions[phone] = StateLeadCallTime
 	body := "3. Preferred Time for Call"
 	sendTextMessage(phone, body)
@@ -989,7 +975,7 @@ func handleLeadCallTime(phone, input string) {
 }
 
 func sendExploreServices(phone string) {
-	body := renderTemplate(db.SettingOr("content_explore_body", "Here’s what we offer:\n\n🔧 Industrial Automation\n⚙️ PLC / SCADA / IIoT\n🛠️ ATEX Products\n💻 Software Development (CRM, ERP, Apps)\n📈 Digital Marketing Solutions\n\nWould you like to:"), "")
+	body := renderTemplate(db.SettingOr("content_explore_body", "Here’s what we offer:\n\n🔧 Industrial Automation\n⚙️ PLC / SCADA / IIoT\n🛠️ ATEX Products\n💻 Software Development (CRM, ERP, Apps)\n\nWould you like to:"), "")
 
 	buttons := []Button{
 		{ID: "quotation", Title: db.ButtonLabel("quotation", "💰 Get a Quote")},

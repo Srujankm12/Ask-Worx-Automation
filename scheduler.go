@@ -42,38 +42,9 @@ func InitScheduler() {
 		}
 	})
 
-	// Good Morning greeting for Users/Customers (Nudge at 8:30 AM IST).
-	// Only contacts who messaged in the last 24 hours: the greeting is not a
-	// template, so Meta rejects it for everyone else.
-	_, err = c.AddFunc("30 8 * * *", func() {
-		phones, err := db.GetPhonesInServiceWindow()
-		if err != nil {
-			log.Println("[Scheduler] Error fetching greeting recipients:", err)
-			return
-		}
-		log.Printf("[Scheduler] Sending morning greeting to %d contacts in the 24h window", len(phones))
-		for _, p := range phones {
-			// Skip if they are an employee
-			isEmp, _ := db.IsEmployee(p)
-			if isEmp {
-				continue
-			}
-
-			msg := db.GetSetting("greeting_customer")
-			if msg == "" {
-				msg = fmt.Sprintf("🌅 *Good Morning from %s!* 🏭\n\nWe hope you have a productive day ahead. If you need any assistance with Industrial Automation, IIoT, or Software solutions, we are just a message away. 🚀", os.Getenv("COMPANY_NAME"))
-			}
-			// Clean up legacy "Type MENU" text if it exists in DB setting
-			msg = strings.ReplaceAll(msg, "\n\nType *MENU* anytime to explore our solutions!", "")
-			msg = strings.ReplaceAll(msg, "Type *MENU* anytime to explore our solutions!", "")
-
-			buttons := []Button{
-				{ID: "main_menu", Title: db.ButtonLabel("main_menu", "🏠 Main Menu")},
-				{ID: "opt_out", Title: db.ButtonLabel("opt_out", "🛑 Stop Messages")},
-			}
-			sendInteractiveButtons(p, msg, buttons)
-		}
-	})
+	// There is no morning greeting for customers. It went daily to everyone
+	// who had messaged in the last 24 hours, and enough of them opted out that
+	// Meta restricted the account; employees still get theirs above.
 
 	// Daily check for new leads older than 24h (IST 10 AM)
 	_, err = c.AddFunc("0 10 * * *", func() {
