@@ -54,7 +54,7 @@ func metaTier() (tier, quality string, err error) {
 		return "", "", fmt.Errorf("WhatsApp is not connected")
 	}
 	req, _ := http.NewRequest("GET", fmt.Sprintf(
-		"https://graph.facebook.com/v21.0/%s?fields=messaging_limit_tier,quality_rating", phoneID), nil)
+		"https://graph.facebook.com/v21.0/%s?fields=whatsapp_business_manager_messaging_limit,messaging_limit_tier,quality_rating", phoneID), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := metaClient.Do(req)
 	if err != nil {
@@ -62,13 +62,19 @@ func metaTier() (tier, quality string, err error) {
 	}
 	defer resp.Body.Close()
 	var body struct {
-		Tier    string `json:"messaging_limit_tier"`
-		Quality string `json:"quality_rating"`
-		Error   struct {
+		// Meta now sets the limit for the whole business portfolio and has
+		// stopped filling in the number's own messaging_limit_tier.
+		Portfolio string `json:"whatsapp_business_manager_messaging_limit"`
+		Tier      string `json:"messaging_limit_tier"`
+		Quality   string `json:"quality_rating"`
+		Error     struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 	json.NewDecoder(resp.Body).Decode(&body)
+	if body.Portfolio != "" {
+		body.Tier = body.Portfolio
+	}
 	if body.Tier == "" {
 		if body.Error.Message != "" {
 			return "", "", fmt.Errorf("%s", body.Error.Message)
